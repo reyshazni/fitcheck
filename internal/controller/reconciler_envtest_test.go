@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -55,7 +55,7 @@ func TestReconciler_Envtest(t *testing.T) {
 	createNodes(t, cl, ctx)
 	createPendingPod(t, cl, ctx)
 
-	recorder := record.NewFakeRecorder(10)
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
 
 	r := &controller.PodReconciler{
 		Client:          cl,
@@ -180,46 +180,46 @@ func createPendingPod(t *testing.T, cl client.Client, ctx context.Context) {
 	}
 }
 
-func verifyEvents(t *testing.T, recorder *record.FakeRecorder) {
+func verifyEvents(t *testing.T, recorder *events.FakeRecorder) {
 	t.Helper()
 
-	events := drainEvents(recorder)
+	collected := drainEvents(recorder)
 
-	if len(events) != 2 {
-		t.Fatalf("expected 2 events, got %d: %v", len(events), events)
+	if len(collected) != 2 {
+		t.Fatalf("expected 2 events, got %d: %v", len(collected), collected)
 	}
 
 	hasAccepted := false
 	hasRejected := false
 
-	for _, e := range events {
-		if strings.Contains(e, "NodepoolAccepted") {
+	for _, e := range collected {
+		if strings.Contains(e, "[accepted]") && strings.Contains(e, "cpu-pool-name(1/1)") {
 			hasAccepted = true
 		}
 
-		if strings.Contains(e, "NodepoolRejected") {
+		if strings.Contains(e, "[rejected]") && strings.Contains(e, "gpu-pool-name") {
 			hasRejected = true
 		}
 	}
 
 	if !hasAccepted {
-		t.Error("expected NodepoolAccepted event for cpu-pool")
+		t.Errorf("expected [accepted] event with cpu-pool-name(1/1), got: %v", collected)
 	}
 
 	if !hasRejected {
-		t.Error("expected NodepoolRejected event for gpu-pool")
+		t.Errorf("expected [rejected] event with gpu-pool-name, got: %v", collected)
 	}
 }
 
-func drainEvents(recorder *record.FakeRecorder) []string {
-	events := make([]string, 0)
+func drainEvents(recorder *events.FakeRecorder) []string {
+	collected := make([]string, 0)
 
 	for {
 		select {
 		case e := <-recorder.Events:
-			events = append(events, e)
+			collected = append(collected, e)
 		default:
-			return events
+			return collected
 		}
 	}
 }
