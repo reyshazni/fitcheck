@@ -1,6 +1,8 @@
 package diagnosis
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -56,6 +58,15 @@ func buildNodepoolResult(d NodepoolDiagnosis) NodepoolResult {
 	}
 
 	return r
+}
+
+func MarshalReport(report DiagnosisReport) (string, error) {
+	data, err := json.Marshal(report)
+	if err != nil {
+		return "", fmt.Errorf("marshaling diagnosis report: %w", err)
+	}
+
+	return string(data), nil
 }
 
 func verdictToString(v Verdict) string {

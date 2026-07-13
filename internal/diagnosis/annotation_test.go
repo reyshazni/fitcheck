@@ -1,6 +1,8 @@
 package diagnosis_test
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +20,8 @@ const (
 	reasonNvidiaTaint = "taint nvidia.com/gpu=present:NoSchedule not tolerated"
 	reasonScaleUp     = "scale-up triggered"
 	verdictTaint      = "taint"
+	verdictAccepted   = "accepted"
+	verdictRejected   = "rejected"
 	mixedSummary      = "2/7 nodepools fit | rejected: 2 taint, 1 affinity | no-stock: 1 | candidate: 1"
 )
 
@@ -117,8 +121,8 @@ func TestBuildReport_MixedAcceptedFields(t *testing.T) {
 		t.Errorf("nodepools[0].Name = %q, want %q", np0.Name, generalPool)
 	}
 
-	if np0.Verdict != "accepted" {
-		t.Errorf("nodepools[0].Verdict = %q, want %q", np0.Verdict, "accepted")
+	if np0.Verdict != verdictAccepted {
+		t.Errorf("nodepools[0].Verdict = %q, want %q", np0.Verdict, verdictAccepted)
 	}
 
 	if np0.Fitting != 3 {
@@ -146,8 +150,8 @@ func TestBuildReport_MixedRejectedFields(t *testing.T) {
 		t.Errorf("nodepools[2].Name = %q, want %q", np2.Name, gpuPoolA)
 	}
 
-	if np2.Verdict != "rejected" {
-		t.Errorf("nodepools[2].Verdict = %q, want %q", np2.Verdict, "rejected")
+	if np2.Verdict != verdictRejected {
+		t.Errorf("nodepools[2].Verdict = %q, want %q", np2.Verdict, verdictRejected)
 	}
 
 	if np2.Reason != reasonNvidiaTaint {
@@ -206,5 +210,68 @@ func TestBuildReport_Empty(t *testing.T) {
 
 	if len(report.Nodepools) != 0 {
 		t.Errorf("nodepools = %d, want 0", len(report.Nodepools))
+	}
+}
+
+func TestMarshalReport_RoundTrip(t *testing.T) {
+	report := diagnosis.DiagnosisReport{
+		Timestamp: "2026-07-13T17:55:31Z",
+		Summary:   "1/2 nodepools fit | rejected: 1 taint",
+		Nodepools: []diagnosis.NodepoolResult{
+			{
+				Name:    generalPool,
+				Verdict: verdictAccepted,
+				Fitting: 3,
+				Total:   5,
+			},
+			{
+				Name:     gpuPoolA,
+				Verdict:  verdictRejected,
+				Reason:   "taint nvidia:NoSchedule not tolerated",
+				Category: verdictTaint,
+			},
+		},
+	}
+
+	data, err := diagnosis.MarshalReport(report)
+	if err != nil {
+		t.Fatalf("MarshalReport() error: %v", err)
+	}
+
+	if data == "" {
+		t.Fatal("MarshalReport() returned empty string")
+	}
+
+	var decoded diagnosis.DiagnosisReport
+	if err := json.Unmarshal([]byte(data), &decoded); err != nil {
+		t.Fatalf("round-trip unmarshal error: %v", err)
+	}
+
+	if decoded.Timestamp != report.Timestamp {
+		t.Errorf("timestamp = %q, want %q", decoded.Timestamp, report.Timestamp)
+	}
+
+	if decoded.Summary != report.Summary {
+		t.Errorf("summary = %q, want %q", decoded.Summary, report.Summary)
+	}
+
+	if len(decoded.Nodepools) != 2 {
+		t.Fatalf("nodepools count = %d, want 2", len(decoded.Nodepools))
+	}
+
+	if decoded.Nodepools[0].Fitting != 3 {
+		t.Errorf("nodepools[0].Fitting = %d, want 3", decoded.Nodepools[0].Fitting)
+	}
+
+	if decoded.Nodepools[1].Category != verdictTaint {
+		t.Errorf("nodepools[1].Category = %q, want %q", decoded.Nodepools[1].Category, verdictTaint)
+	}
+
+	if strings.Contains(data, `"reason":""`) {
+		t.Error("JSON should omit empty reason field")
+	}
+
+	if strings.Contains(data, `"category":""`) {
+		t.Error("JSON should omit empty category field")
 	}
 }
