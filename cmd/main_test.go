@@ -6,11 +6,8 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-)
 
-const (
-	testNodepoolLabel = "node.kubernetes.io/nodepool"
-	testAutoscalerCM  = "cluster-autoscaler-status"
+	"github.com/reyshazni/fitcheck/internal/app"
 )
 
 func TestManagerCreation(t *testing.T) {
@@ -29,13 +26,9 @@ func TestManagerCreation(t *testing.T) {
 		}
 	})
 
-	mgr, err := createManager(cfg, managerOptions{
-		metricsAddr:     "0",
-		healthAddr:      "0",
-		recheckInterval: 30 * time.Second,
-		initialDelay:    10 * time.Second,
-		nodepoolLabel:   testNodepoolLabel,
-		autoscalerCM:    testAutoscalerCM,
+	mgr, err := app.CreateManager(cfg, "0", "0", app.Options{
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    10 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("expected manager creation to succeed, got: %v", err)
@@ -62,13 +55,9 @@ func TestManagerHasHealthChecks(t *testing.T) {
 		}
 	})
 
-	mgr, err := createManager(cfg, managerOptions{
-		metricsAddr:     "0",
-		healthAddr:      "0",
-		recheckInterval: 30 * time.Second,
-		initialDelay:    10 * time.Second,
-		nodepoolLabel:   testNodepoolLabel,
-		autoscalerCM:    testAutoscalerCM,
+	mgr, err := app.CreateManager(cfg, "0", "0", app.Options{
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    10 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("manager creation failed: %v", err)
