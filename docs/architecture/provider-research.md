@@ -186,7 +186,7 @@ ctrl.NewControllerManagedBy(mgr).
 ### EventRecorder
 
 ```go
-recorder := mgr.GetEventRecorderFor("scheduler-debugger")
+recorder := mgr.GetEventRecorderFor("fitcheck")
 
 // Usage in reconcile:
 r.Recorder.Eventf(&pod, corev1.EventTypeWarning, "NodepoolRejected",

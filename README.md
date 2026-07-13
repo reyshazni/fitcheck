@@ -21,12 +21,12 @@ Events:
   Type     Reason             Age  From                  Message
   ----     ------             ---  ----                  -------
   Warning  FailedScheduling   5m   default-scheduler     0/12 nodes available: ...
-  Normal   NodepoolAccepted   4m   scheduler-debugger    nodepool/dsp-general: 2 of 3 nodes fit (cpu=2/8 avail, mem=4Gi/16Gi avail)
-  Warning  NodepoolRejected   4m   scheduler-debugger    nodepool/ml-training: taint {team=ml:NoSchedule} not tolerated
-  Warning  NodepoolRejected   4m   scheduler-debugger    nodepool/system: nodeSelector {team=dsp} not matched
-  Warning  NodepoolRejected   4m   scheduler-debugger    nodepool/dsp-highmem: Insufficient cpu (requested=2, max allocatable=1.5)
-  Warning  NodepoolNoStock    4m   scheduler-debugger    nodepool/dsp-spot: autoscaler backoff - FailedScaleUp (insufficient China-East-2 inventory)
-  Normal   NodepoolCandidate  4m   scheduler-debugger    nodepool/dsp-general: would fit on new node, but autoscaler in backoff
+  Normal   NodepoolAccepted   4m   fitcheck    nodepool/dsp-general: 2 of 3 nodes fit (cpu=2/8 avail, mem=4Gi/16Gi avail)
+  Warning  NodepoolRejected   4m   fitcheck    nodepool/ml-training: taint {team=ml:NoSchedule} not tolerated
+  Warning  NodepoolRejected   4m   fitcheck    nodepool/system: nodeSelector {team=dsp} not matched
+  Warning  NodepoolRejected   4m   fitcheck    nodepool/dsp-highmem: Insufficient cpu (requested=2, max allocatable=1.5)
+  Warning  NodepoolNoStock    4m   fitcheck    nodepool/dsp-spot: autoscaler backoff - FailedScaleUp (insufficient China-East-2 inventory)
+  Normal   NodepoolCandidate  4m   fitcheck    nodepool/dsp-general: would fit on new node, but autoscaler in backoff
 ```
 
 Per-nodepool Events that tell you:
