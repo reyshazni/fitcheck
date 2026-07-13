@@ -1,13 +1,14 @@
 # fitcheck
 
-Kubernetes controller that diagnoses why pods are stuck in Pending. Watches Pending pods, evaluates scheduling fit per nodepool, and emits diagnostic Events visible via `kubectl describe pod`, no client-side tooling required.
+Kubernetes controller that diagnoses why pods are stuck in Pending. Per-nodepool scheduling breakdown visible via `kubectl describe pod`, no client-side tooling required.
 
 ## The problem
 
 The scheduler's `FailedScheduling` event only shows aggregated rejection counts:
 
 ```
-0/12 nodes available: 4 had taint, 5 Insufficient cpu, 3 node(s) didn't match node selector
+0/26 nodes available: 4 had untolerated taint {project: growth-dge}, 7 had untolerated taint
+{workload_type: nfs}, 8 didn't match Pod's node affinity/selector...
 ```
 
 This tells you nothing about which nodepools rejected the pod, why each one rejected it, or what the autoscaler is doing about it.
@@ -15,35 +16,32 @@ This tells you nothing about which nodepools rejected the pod, why each one reje
 ## What fitcheck does
 
 ```
-$ kubectl describe pod my-ml-job
+$ kubectl describe pod my-pending-job
 
 Events:
-  Type     Reason             Age  From                  Message
-  ----     ------             ---  ----                  -------
-  Warning  FailedScheduling   5m   default-scheduler     0/12 nodes available: ...
-  Normal   NodepoolAccepted   4m   fitcheck    nodepool/dsp-general: 2 of 3 nodes fit (cpu=2/8 avail, mem=4Gi/16Gi avail)
-  Warning  NodepoolRejected   4m   fitcheck    nodepool/ml-training: taint {team=ml:NoSchedule} not tolerated
-  Warning  NodepoolRejected   4m   fitcheck    nodepool/system: nodeSelector {team=dsp} not matched
-  Warning  NodepoolRejected   4m   fitcheck    nodepool/dsp-highmem: Insufficient cpu (requested=2, max allocatable=1.5)
-  Warning  NodepoolNoStock    4m   fitcheck    nodepool/dsp-spot: autoscaler backoff - FailedScaleUp (insufficient China-East-2 inventory)
-  Normal   NodepoolCandidate  4m   fitcheck    nodepool/dsp-general: would fit on new node, but autoscaler in backoff
+  Type     Reason              Age  From               Message
+  ----     ------              ---  ----               -------
+  Warning  FailedScheduling    5m   default-scheduler   0/26 nodes available: ...
+  Normal   FitcheckDiagnosis   4m   fitcheck            [accepted] general-pool(3/3), compute-pool(5/5)
+  Warning  FitcheckDiagnosis   4m   fitcheck            [rejected] nfs: taint workload_type=nfs:NoSchedule not tolerated, gpu-pool: taint nvidia.com/gpu=present:NoSchedule not tolerated
+                                                        [no-stock] spot-pool: inventory unhealthy
+                                                        [candidate] highmem-pool: scale-up triggered
+  Normal   NotTriggerScaleUp   4m   GOATScaler          pod didn't trigger scale-up: 14 NodePool NoStock, 32 TaintToleration
 ```
 
-Per-nodepool Events that tell you:
-- Which nodepools can accept the pod and which can't
-- The specific reason each nodepool rejected it
-- The autoscaler's scaling state per nodepool (backoff, stock unavailable, max size)
-- Which nodepools would fit if they could scale up
+Two compact events per pod:
+- **Normal**: which nodepools can accept the pod, with fitting/total node counts
+- **Warning**: which nodepools rejected the pod and why, grouped by verdict
 
-## Tech stack
+## How it works
 
-- **Language**: Go 1.26
-- **Framework**: controller-runtime v0.24.1
-- **Logging**: slog (stdlib) with JSON output, wired to controller-runtime via logr
-- **Metrics**: Prometheus at `/metrics` (controller-runtime built-in)
-- **Testing**: envtest (integration), Go standard testing (unit)
-- **Distribution**: Helm chart (OCI), container image (ghcr.io)
-- **CI/CD**: GitHub Actions (lint, test, e2e, release with cosign signing)
+fitcheck reads only from the Kubernetes API. Zero cloud SDK dependencies.
+
+1. Watches Pending pods via controller-runtime
+2. Groups cluster nodes by nodepool label (auto-detected per provider)
+3. Evaluates scheduling fit per nodepool: taints, nodeSelector, node affinity, resources (cpu, memory, gpu)
+4. Reads autoscaler events (GOATScaler) to determine scaling state per nodepool
+5. Emits compact summary events on the pod
 
 ## Install
 
@@ -63,16 +61,17 @@ kubectl apply -f https://github.com/reyshazni/fitcheck/releases/latest/download/
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--bind-addr` | `:8080` | Single HTTP port for /metrics, /healthz, /readyz |
+| `--metrics-addr` | `:8080` | Prometheus metrics bind address |
+| `--health-addr` | `:8081` | Health probe bind address (/healthz, /readyz) |
 | `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
-| `--initial-delay` | `10s` | Delay before first diagnosis |
+| `--initial-delay` | `10s` | Delay before first diagnosis (let scheduler attempt first) |
 | `--namespace` | (all) | Restrict to specific namespace |
 
-Provider is auto-detected from cluster node labels at startup.
+Provider is auto-detected from cluster node labels at startup. No `--provider` flag needed.
 
 ## Provider support
 
-v0.0.1 targets **Alibaba ACK** only. Multi-provider support is planned for future releases.
+v0.0.1 targets **Alibaba ACK** with GOATScaler. Multi-provider support is planned.
 
 | Provider | Nodepool label | Status |
 |---|---|---|
@@ -82,21 +81,23 @@ v0.0.1 targets **Alibaba ACK** only. Multi-provider support is planned for futur
 | EKS (Karpenter) | `karpenter.sh/nodepool` | planned |
 | TKE (Tencent) | `tke.cloud.tencent.com/nodepool-id` | planned |
 
+Adding a provider means implementing the `Provider` interface and registering it. See `internal/provider/ack/` for reference.
+
 ## Scheduling dimensions checked
 
-The controller evaluates these dimensions per nodepool, in order:
+Per nodepool, in order:
 
 1. Taint/toleration mismatch
 2. NodeSelector not matched
 3. Node affinity not matched
-4. Insufficient resources (cpu, memory, gpu)
-5. Pod anti-affinity conflict
-6. Topology spread constraint violation
-7. Autoscaler state (max size, backoff, FailedScaleUp, stock unavailable)
+4. Insufficient resources (cpu, memory, nvidia.com/gpu)
+
+Autoscaler integration (GOATScaler):
+- Reads `ProvisionNode`, `NotTriggerScaleUp`, `ProvisionNodeFailed` events on pods
+- Reads `InstanceInventoryStatusChanged` events for nodepool stock status
+- Upgrades rejected verdicts to `candidate` (scale-up triggered) or `no-stock` (inventory unhealthy)
 
 ## RBAC
-
-Minimal permissions: read pods/nodes/configmaps, create events.
 
 ```yaml
 rules:
@@ -105,13 +106,16 @@ rules:
     verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [nodes]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [configmaps]
-    verbs: [get]
+    verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [events]
-    verbs: [create, patch]
+    verbs: [get, list, create, patch]
+  - apiGroups: ["events.k8s.io"]
+    resources: [events]
+    verbs: [get, list, create, patch]
 ```
 
 ## Development
@@ -131,18 +135,20 @@ make verify         # run all checks (fmt, vet, lint, test, helm-lint)
 ## Repository layout
 
 ```
-cmd/                            # main.go, controller entrypoint
+cmd/
+  main.go                       # thin entry point: parse flags, app.Run()
 internal/
-  controller/                   # PodReconciler, core reconcile loop
-  types/                        # shared types (Verdict, NodepoolDiagnosis, AutoscalerStatus)
-  version/                      # build-time version info via ldflags
+  app/                          # manager creation, health checks, controller wiring
+  controller/                   # PodReconciler, event emission
+  diagnosis/                    # scheduling checks (pure functions), compact summary formatting
+  provider/                     # Provider interface (plug-and-play per cloud)
+  provider/ack/                 # ACK provider: labels, GOATScaler integration
+  nodepool/                     # node collector, groups nodes by label
+  autoscaler/                   # StatusReader interface, GOATScaler event reader
+  log/                          # structured logging setup (slog + logr)
+  version/                      # build-time version info
 charts/
   fitcheck/                     # Helm chart
-    templates/
-      deployment.yaml
-      serviceaccount.yaml
-      clusterrole.yaml
-      clusterrolebinding.yaml
 .github/
   workflows/
     ci.yml                      # lint, test, helm lint, build
@@ -170,6 +176,6 @@ docs/
 | Location | Content |
 |---|---|
 | `docs/architecture/overview.md` | Architecture, reconciler lifecycle, provider support |
-| `docs/architecture/provider-research.md` | Provider labels, autoscaler ConfigMap format, stock errors |
-| `docs/feature/scheduler-diagnostics.md` | Feature spec: event types, message format, rejection categories |
+| `docs/architecture/provider-research.md` | ACK labels, GOATScaler events, autoscaler research |
+| `docs/feature/scheduler-diagnostics.md` | Feature spec: event types, message format, behavior |
 | `docs/plans/` | Implementation plans |
