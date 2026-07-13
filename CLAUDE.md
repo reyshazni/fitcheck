@@ -56,12 +56,12 @@ docs/
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--nodepool-label` | `node.kubernetes.io/nodepool` | Label key for grouping nodes into nodepools |
+| `--bind-addr` | `:8080` | Single HTTP port for /metrics, /healthz, /readyz |
 | `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
 | `--initial-delay` | `10s` | Delay before first diagnosis |
 | `--namespace` | (all) | Restrict to specific namespace |
-| `--autoscaler-configmap` | `cluster-autoscaler-status` | ConfigMap name for autoscaler status |
-| `--metrics-addr` | `:8080` | Metrics bind address |
+
+Provider is auto-detected from cluster node labels at startup. No `--provider` flag needed.
 
 ## Provider Support
 
