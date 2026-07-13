@@ -4,6 +4,7 @@ package controller_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/reyshazni/fitcheck/internal/controller"
+	"github.com/reyshazni/fitcheck/internal/diagnosis"
 	"github.com/reyshazni/fitcheck/internal/provider/ack"
 )
 
@@ -76,6 +78,7 @@ func TestReconciler_Envtest(t *testing.T) {
 		t.Errorf("RequeueAfter = %v, want 30s", result.RequeueAfter)
 	}
 
+	verifyAnnotation(t, cl, ctx, req.NamespacedName)
 	verifyEvents(t, recorder)
 }
 
@@ -180,34 +183,76 @@ func createPendingPod(t *testing.T, cl client.Client, ctx context.Context) {
 	}
 }
 
-func verifyEvents(t *testing.T, recorder *events.FakeRecorder) {
+func verifyAnnotation(
+	t *testing.T,
+	cl client.Client,
+	ctx context.Context,
+	key types.NamespacedName,
+) {
 	t.Helper()
 
-	collected := drainEvents(recorder)
+	var pod corev1.Pod
+	if err := cl.Get(ctx, key, &pod); err != nil {
+		t.Fatalf("getting pod for annotation check: %v", err)
+	}
 
-	if len(collected) != 2 {
-		t.Fatalf("expected 2 events, got %d: %v", len(collected), collected)
+	ann, ok := pod.Annotations[diagnosis.AnnotationKey]
+	if !ok {
+		t.Fatalf("expected annotation %q to be set", diagnosis.AnnotationKey)
+	}
+
+	var report diagnosis.DiagnosisReport
+	if err := json.Unmarshal([]byte(ann), &report); err != nil {
+		t.Fatalf("invalid annotation JSON: %v", err)
+	}
+
+	if report.Timestamp == "" {
+		t.Error("report.Timestamp is empty")
+	}
+
+	if !strings.Contains(report.Summary, "nodepools fit") {
+		t.Errorf("summary = %q, expected 'nodepools fit'", report.Summary)
+	}
+
+	if len(report.Nodepools) != 2 {
+		t.Errorf("nodepools count = %d, want 2", len(report.Nodepools))
 	}
 
 	hasAccepted := false
 	hasRejected := false
 
-	for _, e := range collected {
-		if strings.Contains(e, "[accepted]") && strings.Contains(e, "cpu-pool-name(1/1)") {
+	for _, np := range report.Nodepools {
+		if np.Verdict == "accepted" && np.Name == "cpu-pool-name" {
 			hasAccepted = true
 		}
 
-		if strings.Contains(e, "[rejected]") && strings.Contains(e, "gpu-pool-name") {
+		if np.Verdict == "rejected" && np.Name == "gpu-pool-name" {
 			hasRejected = true
 		}
 	}
 
 	if !hasAccepted {
-		t.Errorf("expected [accepted] event with cpu-pool-name(1/1), got: %v", collected)
+		t.Errorf("expected accepted nodepool cpu-pool-name, got: %s", ann)
 	}
 
 	if !hasRejected {
-		t.Errorf("expected [rejected] event with gpu-pool-name, got: %v", collected)
+		t.Errorf("expected rejected nodepool gpu-pool-name, got: %s", ann)
+	}
+}
+
+func verifyEvents(t *testing.T, recorder *events.FakeRecorder) {
+	t.Helper()
+
+	collected := drainEvents(recorder)
+
+	if len(collected) != 1 {
+		t.Fatalf("expected 1 event, got %d: %v", len(collected), collected)
+	}
+
+	event := collected[0]
+
+	if !strings.Contains(event, "nodepools fit") {
+		t.Errorf("expected event with 'nodepools fit', got: %q", event)
 	}
 }
 
