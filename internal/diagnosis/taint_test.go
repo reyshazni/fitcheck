@@ -12,8 +12,11 @@ const (
 	taintKeyDedicated = "dedicated"
 	testValueGPU      = "gpu"
 	testValueTrue     = "true"
+	testValueFalse    = "false"
 	testZoneEast1a    = "us-east-1a"
 	testLabelZone     = "zone"
+	testZoneEast      = "us-east"
+	testZoneWest      = "us-west"
 )
 
 func TestCheckTaints_AllTolerated(t *testing.T) {
@@ -99,7 +102,7 @@ func TestCheckTaints_NoExecuteNotTolerated(t *testing.T) {
 
 func TestCheckTaints_PreferNoScheduleIgnored(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "prefer-zone", Value: "us-east", Effect: corev1.TaintEffectPreferNoSchedule},
+		{Key: "prefer-zone", Value: testZoneEast, Effect: corev1.TaintEffectPreferNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)

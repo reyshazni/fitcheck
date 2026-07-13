@@ -32,7 +32,7 @@ func TestCheckNodeSelector_MissingLabel(t *testing.T) {
 
 func TestCheckNodeSelector_WrongValue(t *testing.T) {
 	selector := map[string]string{testValueGPU: testValueTrue}
-	labels := map[string]string{testValueGPU: "false"}
+	labels := map[string]string{testValueGPU: testValueFalse}
 
 	got := diagnosis.CheckNodeSelector(selector, labels)
 	if got == nil {
