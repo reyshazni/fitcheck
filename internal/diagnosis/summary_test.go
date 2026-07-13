@@ -49,3 +49,37 @@ func TestFormatSummary_AcceptedOnly(t *testing.T) {
 		t.Errorf("warning = %q, want empty", warning)
 	}
 }
+
+func TestFormatSummary_RejectedOnly(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: summaryPoolAlpha,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryTaint,
+				Reason:   "taint workload_type=nfs",
+			},
+			TotalNodes: 2,
+		},
+		{
+			NodepoolName: summaryPoolBravo,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryTaint,
+				Reason:   "taint nvidia:NoSchedule",
+			},
+			TotalNodes: 1,
+		},
+	}
+
+	normal, warning := diagnosis.FormatSummary(diagnoses)
+
+	if normal != "" {
+		t.Errorf("normal = %q, want empty", normal)
+	}
+
+	wantWarning := "[rejected] alpha: taint workload_type=nfs, bravo: taint nvidia:NoSchedule"
+	if warning != wantWarning {
+		t.Errorf("warning = %q, want %q", warning, wantWarning)
+	}
+}
