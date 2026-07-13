@@ -29,11 +29,10 @@ spec:
           image: "{{ .Values.image.repository }}:{{ include "fitcheck.imageTag" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - --nodepool-label={{ .Values.controller.nodepoolLabel }}
+            - --metrics-addr={{ .Values.controller.metricsAddr }}
+            - --health-addr={{ .Values.controller.healthAddr }}
             - --recheck-interval={{ .Values.controller.recheckInterval }}
             - --initial-delay={{ .Values.controller.initialDelay }}
-            - --autoscaler-configmap={{ .Values.controller.autoscalerConfigmap }}
-            - --metrics-addr={{ .Values.controller.metricsAddr }}
           ports:
             - name: metrics
               containerPort: 8080

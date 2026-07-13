@@ -15,12 +15,10 @@ serviceAccount:
   annotations: {}
 
 controller:
-  nodepoolLabel: "kubernetes.azure.com/agentpool"
-  recheckInterval: "30s"
-  initialDelay: "10s"
-  autoscalerConfigmap: "cluster-autoscaler-status"
   metricsAddr: ":8080"
   healthAddr: ":8081"
+  recheckInterval: "30s"
+  initialDelay: "10s"
 
 resources:
   requests:
