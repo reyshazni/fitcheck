@@ -1,0 +1,35 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/reyshazni/fitcheck
+  tag: ""  # defaults to appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+controller:
+  nodepoolLabel: "kubernetes.azure.com/agentpool"
+  recheckInterval: "30s"
+  initialDelay: "10s"
+  autoscalerConfigmap: "cluster-autoscaler-status"
+  metricsAddr: ":8080"
+  healthAddr: ":8081"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

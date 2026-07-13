@@ -1,0 +1,17 @@
+apiVersion: v2
+name: fitcheck
+description: Kubernetes controller that validates node-pool readiness before workload scheduling
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/reyshazni/fitcheck
+sources:
+  - https://github.com/reyshazni/fitcheck
+keywords:
+  - kubernetes
+  - controller
+  - node-pool
+  - readiness
+maintainers:
+  - name: reyshazni
+    url: https://github.com/reyshazni
