@@ -97,16 +97,22 @@ func TestReconcile_PendingPod(t *testing.T) {
 		t.Errorf("RequeueAfter = %v, want 30s", result.RequeueAfter)
 	}
 
+	// Expect exactly one event with the new summary format.
 	select {
 	case event := <-recorder.Events:
-		if !strings.Contains(event, "[accepted]") {
-			t.Errorf("expected compact event with [accepted], got %q", event)
-		}
-		if !strings.Contains(event, "general(1/1)") {
-			t.Errorf("expected general(1/1) in event, got %q", event)
+		if !strings.Contains(event, "nodepools fit") {
+			t.Errorf("expected event with 'nodepools fit', got %q", event)
 		}
 	default:
 		t.Error("expected at least one event to be emitted")
+	}
+
+	// No second event.
+	select {
+	case event := <-recorder.Events:
+		t.Errorf("expected exactly one event, got extra: %q", event)
+	default:
+		// expected
 	}
 }
 
