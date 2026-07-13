@@ -37,24 +37,26 @@ Per-nodepool Events that tell you:
 
 ## Tech stack
 
-- **Language**: Go
-- **Framework**: controller-runtime
-- **Testing**: envtest
+- **Language**: Go 1.26
+- **Framework**: controller-runtime v0.24.1
+- **Logging**: slog (stdlib) with JSON output, wired to controller-runtime via logr
+- **Metrics**: Prometheus at `/metrics` (controller-runtime built-in)
+- **Testing**: envtest (integration), Go standard testing (unit)
 - **Distribution**: Helm chart (OCI), container image (ghcr.io)
-- **CI/CD**: GitHub Actions
+- **CI/CD**: GitHub Actions (lint, test, e2e, release with cosign signing)
 
 ## Install
 
 ### Helm (recommended)
 
 ```bash
-helm install fitcheck oci://ghcr.io/helmi/charts/fitcheck
+helm install fitcheck oci://ghcr.io/reyshazni/charts/fitcheck -n kube-system
 ```
 
 ### Quick-start (evaluation only)
 
 ```bash
-kubectl apply -f https://github.com/helmi/fitcheck/releases/latest/download/install.yaml
+kubectl apply -f https://github.com/reyshazni/fitcheck/releases/latest/download/install.yaml
 ```
 
 ## Configuration
@@ -66,18 +68,20 @@ kubectl apply -f https://github.com/helmi/fitcheck/releases/latest/download/inst
 | `--initial-delay` | `10s` | Delay before first diagnosis |
 | `--namespace` | (all) | Restrict to specific namespace |
 | `--autoscaler-configmap` | `cluster-autoscaler-status` | ConfigMap name for autoscaler status |
+| `--metrics-addr` | `:8080` | Metrics bind address |
+| `--health-addr` | `:8081` | Health probe bind address |
 
-## Supported providers
+## Provider support
 
-| Provider | Nodepool label | Autoscaler source |
+v0.0.1 targets **Alibaba ACK** only. Multi-provider support is planned for future releases.
+
+| Provider | Nodepool label | Status |
 |---|---|---|
-| ACK (Alibaba) | `alibabacloud.com/nodepool-id` | ConfigMap |
-| GKE | `cloud.google.com/gke-nodepool` | ConfigMap |
-| EKS (managed) | `eks.amazonaws.com/nodegroup` | ConfigMap |
-| EKS (Karpenter) | `karpenter.sh/nodepool` | NodePool/NodeClaim CRDs |
-| TKE (Tencent) | `tke.cloud.tencent.com/nodepool-id` | ConfigMap |
-
-Auto-detection available via `--provider=auto`.
+| ACK (Alibaba) | `alibabacloud.com/nodepool-id` | v0.0.1 |
+| GKE | `cloud.google.com/gke-nodepool` | planned |
+| EKS (managed) | `eks.amazonaws.com/nodegroup` | planned |
+| EKS (Karpenter) | `karpenter.sh/nodepool` | planned |
+| TKE (Tencent) | `tke.cloud.tencent.com/nodepool-id` | planned |
 
 ## Scheduling dimensions checked
 
@@ -114,35 +118,45 @@ rules:
 ## Development
 
 ```bash
-make build          # compile to bin/fitcheck
-make test           # run all tests
-make lint           # golangci-lint
+make build          # compile to bin/fitcheck (with ldflags version info)
+make test           # run all tests with envtest + race detector
+make lint           # golangci-lint (strict config in .golangci.yml)
+make fmt            # go fmt
+make vet            # go vet
 make run            # build and run
 make docker-build   # build container image
+make helm-lint      # lint and template Helm chart
+make verify         # run all checks (fmt, vet, lint, test, helm-lint)
 ```
 
 ## Repository layout
 
 ```
-cmd/                        # main.go, controller entrypoint
+cmd/                            # main.go, controller entrypoint
 internal/
-  controller/               # PodReconciler, core reconcile loop
-  types/                    # shared types (Verdict, NodepoolDiagnosis, AutoscalerStatus)
+  controller/                   # PodReconciler, core reconcile loop
+  types/                        # shared types (Verdict, NodepoolDiagnosis, AutoscalerStatus)
+  version/                      # build-time version info via ldflags
 charts/
-  fitcheck/                 # Helm chart
+  fitcheck/                     # Helm chart
     templates/
       deployment.yaml
       serviceaccount.yaml
       clusterrole.yaml
       clusterrolebinding.yaml
+.github/
+  workflows/
+    ci.yml                      # lint, test, helm lint, build
+    e2e.yml                     # kind cluster matrix (K8s 1.30, 1.31)
+    release.yml                 # image push, cosign, SBOM, Helm OCI, GitHub release
+hack/
+  e2e-setup.sh                  # kind cluster setup for E2E tests
+test/
+  e2e/                          # E2E test suite
 docs/
-  architecture/
-    overview.md             # architecture deep-dive, reconciler lifecycle
-    provider-research.md    # provider-specific labels, autoscaler behavior, quirks
-  feature/
-    scheduler-diagnostics.md  # feature spec (event types, message format, behavior)
-  plans/
-    v0.0.1-implementation.md  # TDD implementation plan
+  architecture/                 # architecture deep-dive, provider research
+  feature/                      # feature specs
+  plans/                        # implementation plans
 ```
 
 ## Non-goals
@@ -159,4 +173,4 @@ docs/
 | `docs/architecture/overview.md` | Architecture, reconciler lifecycle, provider support |
 | `docs/architecture/provider-research.md` | Provider labels, autoscaler ConfigMap format, stock errors |
 | `docs/feature/scheduler-diagnostics.md` | Feature spec: event types, message format, rejection categories |
-| `docs/plans/v0.0.1-implementation.md` | Step-by-step TDD implementation plan |
+| `docs/plans/` | Implementation plans |
