@@ -127,7 +127,13 @@ func applyAutoscalerStatus(d *diagnosis.NodepoolDiagnosis, statuses map[string]a
 }
 
 func (r *PodReconciler) emitEvents(pod *corev1.Pod, diagnoses []diagnosis.NodepoolDiagnosis) {
-	for i := range diagnoses {
-		r.Recorder.Eventf(pod, nil, diagnoses[i].EventType(), diagnoses[i].EventReason(), "diagnose", diagnoses[i].Message())
+	normal, warning := diagnosis.FormatSummary(diagnoses)
+
+	if normal != "" {
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeNormal, "FitcheckDiagnosis", "diagnose", normal)
+	}
+
+	if warning != "" {
+		r.Recorder.Eventf(pod, nil, corev1.EventTypeWarning, "FitcheckDiagnosis", "diagnose", warning)
 	}
 }

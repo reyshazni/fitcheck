@@ -2,6 +2,7 @@ package controller_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,8 +99,11 @@ func TestReconcile_PendingPod(t *testing.T) {
 
 	select {
 	case event := <-recorder.Events:
-		if event == "" {
-			t.Error("expected event, got empty string")
+		if !strings.Contains(event, "[accepted]") {
+			t.Errorf("expected compact event with [accepted], got %q", event)
+		}
+		if !strings.Contains(event, "general(1/1)") {
+			t.Errorf("expected general(1/1) in event, got %q", event)
 		}
 	default:
 		t.Error("expected at least one event to be emitted")
