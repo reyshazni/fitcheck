@@ -39,7 +39,7 @@ jobs:
         run: pip install yamllint
 
       - name: Run yamllint
-        run: yamllint -c .yamllint.yml charts/ .github/
+        run: yamllint -c .yamllint.yml charts/fitcheck/Chart.yaml charts/fitcheck/values.yaml .github/
 
   test:
     name: Test

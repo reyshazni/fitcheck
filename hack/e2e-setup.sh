@@ -12,6 +12,11 @@ docker build -t "${IMAGE_NAME}" .
 echo "Loading image into kind cluster..."
 kind load docker-image "${IMAGE_NAME}" --name "${CLUSTER_NAME}"
 
+echo "Labeling kind node with ACK nodepool label for provider detection..."
+NODE_NAME=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+kubectl label node "${NODE_NAME}" alibabacloud.com/nodepool-id=e2e-pool --overwrite
+kubectl label node "${NODE_NAME}" name=e2e-nodepool --overwrite
+
 echo "Installing fitcheck via Helm..."
 helm upgrade --install fitcheck "${CHART_DIR}" \
   --namespace "${NAMESPACE}" \
