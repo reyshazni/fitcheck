@@ -44,12 +44,19 @@ func Run(cfg *rest.Config, metricsAddr, healthAddr string, opts Options) error {
 
 	ctx := ctrl.SetupSignalHandler()
 
-	prov, err := provider.DetectProvider(ctx, mgr.GetClient())
+	// Use a direct (non-cached) client for pre-start operations.
+	// mgr.GetClient() is cached and only works after mgr.Start().
+	directClient, err := client.New(cfg, client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return fmt.Errorf("creating direct client: %w", err)
+	}
+
+	prov, err := provider.DetectProvider(ctx, directClient)
 	if err != nil {
 		return fmt.Errorf("detecting provider: %w", err)
 	}
 
-	reader, err := prov.NewStatusReader(ctx, mgr.GetClient())
+	reader, err := prov.NewStatusReader(ctx, directClient)
 	if err != nil {
 		return fmt.Errorf("detecting autoscaler: %w", err)
 	}
