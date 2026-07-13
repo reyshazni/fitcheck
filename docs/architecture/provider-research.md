@@ -2,109 +2,158 @@
 
 ## Provider Nodepool Labels
 
-| Provider | Label Key | Value | Confidence |
+| Provider | Label Key | Value | Source |
 |---|---|---|---|
-| GKE | cloud.google.com/gke-nodepool | pool name | 1.0 |
-| ACK | alibabacloud.com/nodepool-id | nodepool ID | 0.95 |
-| TKE | tke.cloud.tencent.com/nodepool-id | nodepool ID (e.g. np-4nk83f9v) | 1.0 |
-| EKS (managed) | eks.amazonaws.com/nodegroup | nodegroup name | 0.95 |
-| EKS (eksctl) | alpha.eksctl.io/nodegroup-name | nodegroup name | 0.95 |
-| EKS (Karpenter) | karpenter.sh/nodepool | NodePool name | 0.95 |
+| ACK | `alibabacloud.com/nodepool-id` | nodepool ID (e.g. `np917725...`) | [ACK docs](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/schedule-an-application-pod-to-a-specific-node-pool), verified on live clusters |
+| GKE | `cloud.google.com/gke-nodepool` | pool name | [GKE docs](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/node-pools) |
+| TKE | `tke.cloud.tencent.com/nodepool-id` | nodepool ID | [TKE docs](https://intl.cloud.tencent.com/ind/document/product/457/65833) |
+| EKS (managed) | `eks.amazonaws.com/nodegroup` | nodegroup name | [EKS docs](https://docs.aws.amazon.com/eks/latest/userguide/managed-node-groups.html) |
+| EKS (Karpenter) | `karpenter.sh/nodepool` | NodePool name | [Karpenter docs](https://karpenter.sh/docs/concepts/nodepools/) |
 
-### TKE extra mapping
+### ACK nodepool labels (verified on live clusters)
 
-TKE's autoscaler ConfigMap keys nodegroups by ASG ID, not nodepool ID. Nodes carry both labels:
-- `tke.cloud.tencent.com/nodepool-id` (nodepool identity)
-- `cloud.tencent.com/auto-scaling-group-id` (ASG identity, used in ConfigMap)
+ACK applies **two** nodepool ID labels to every node:
+- `alibabacloud.com/nodepool-id` (official, documented)
+- `node.alibabacloud.com/nodepool-id` (undocumented, identical value)
 
-The controller needs to map nodepool ID -> ASG ID to correlate with autoscaler status.
+The official docs only mention `alibabacloud.com/nodepool-id` as "automatically created" per node pool.
 
-### EKS dual autoscaler
+Additional labels observed on ACK nodes:
+- `name` = human-readable nodepool name (e.g. `al-iads-id-s-01-compute-optimized-nodepool-01`)
+- `node.kubernetes.io/instance-type` = ECS instance type (e.g. `ecs.c8i.xlarge`)
+- `node.alibabacloud.com/spot-strategy` = `NoSpot` or spot config
+- `node.alibabacloud.com/instance-charge-type` = `PostPaid` etc.
 
-EKS clusters may run Cluster Autoscaler or Karpenter. They use different status sources:
-- Cluster Autoscaler: standard `cluster-autoscaler-status` ConfigMap
-- Karpenter: NodePool `.status` and NodeClaim `.status.conditions` CRDs
+GPU nodes also carry:
+- `aliyun.accelerator/nvidia_name` = GPU model (e.g. `NVIDIA-L20`, `NVIDIA-A10`)
+- `aliyun.accelerator/nvidia_count` = GPU count per node
+- `aliyun.accelerator/nvidia_mem` = GPU memory (e.g. `46068MiB`)
 
-The controller should detect which is active and adapt.
+**Source:** Live cluster inspection across 10+ ACK clusters (dads, iads, odds environments).
 
-## Autoscaler Status Reporting
+## ACK Autoscaler: Two Modes
 
-All 4 providers use the standard upstream `cluster-autoscaler-status` ConfigMap in kube-system (when using Cluster Autoscaler). No provider-specific deviations in ConfigMap format.
+ACK offers two mutually exclusive node autoscalers. Only one runs per cluster.
 
-### ConfigMap structure
-
-```
-Cluster-wide:
-  Health:      Healthy (ready=N unready=0 ...)
-  ScaleUp:     NoActivity | InProgress | Backoff
-  ScaleDown:   NoCandidates | CandidatesPresent
-
-NodeGroups:
-  Name:        <nodegroup-identifier>
-  Health:      Healthy (ready=N ...)
-  ScaleUp:     NoActivity | InProgress | Backoff (ready=N, cloudProviderTarget=M ...)
-  ScaleDown:   NoCandidates | CandidatesPresent
-```
-
-### ACK extra ConfigMap
-
-ACK also has an `autoscaler-meta` ConfigMap in kube-system with ACK-specific metadata.
-
-## Stock Exhaustion Error Signals
-
-| Provider | Error Code / Message | Where it surfaces |
+| Feature | cluster-autoscaler | GOATScaler |
 |---|---|---|
-| GKE | ZONE_RESOURCE_POOL_EXHAUSTED, QUOTA_EXCEEDED, GCE_STOCKOUT | ScaleUpFailed event on pod, ConfigMap shows Backoff |
-| ACK | OperationDenied.NoStock ("resource is out of stock in the specified zone") | FailedScaleUp event on pod, ESS ScaleOutError |
-| TKE | ResourceInsufficient (CVM stock) via AS API | ScaleUpFailed event, ConfigMap shows Backoff |
-| EKS (CA) | InsufficientInstanceCapacity (EC2 error) | FailedScaleUp event on pod, ConfigMap shows Backoff |
-| EKS (Karpenter) | InsufficientInstanceCapacity | Event on NodeClaim, NodeClaim condition shows failure |
+| Type | Round-robin polling | Event-driven |
+| Scale-out latency | 60s (standard), 50s (swift) | 35-55s |
+| Success rate | ~97% | 99% |
+| Status ConfigMap | `cluster-autoscaler-status` (standard format) | `autoscaler-meta` (JSON) |
+| Scaler detection | Check for `cluster-autoscaler-status` CM | Check `autoscaler-meta` CM, `scaler-type` field |
+| Pod events | `TriggeredScaleUp`, `FailedScaleUp`, `NotTriggerScaleUp` | `ProvisionNode`, `ProvisionNodeFailed`, `NotTriggerScaleUp`, `ResetPod` |
+| Nodepool events | None | `InstanceInventoryStatusChanged` on `ACKNodePool` objects |
+| Node labels | Standard | `goatscaler.io/managed=true`, `goatscaler.io/provision-task-id` |
 
-### Common pattern
+**Source:** [ACK Node Scaling Overview](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/overview-of-node-scaling)
 
-All providers follow the same flow on stock exhaustion:
-1. Autoscaler attempts scale-up
-2. Cloud provider API returns capacity error
-3. Autoscaler emits FailedScaleUp event on the pod
-4. Autoscaler enters backoff for that nodegroup (up to 30min after repeated failures)
-5. ConfigMap reflects Backoff status for the nodegroup
+### GOATScaler (verified on live clusters)
 
-The controller reads the ConfigMap + events to surface this per nodepool.
+All inspected ACK clusters use GOATScaler. Key findings:
 
-## Provider-Specific Scheduling Quirks
+**ConfigMap `autoscaler-meta`** in kube-system contains JSON with:
+- `scaler-type`: `"goatscaler"`
+- `scan_interval`, `expander`, `scale_up_from_zero`, etc.
+- `scaling_configurations`: map of ASG ID to nodepool config (labels, taints, min/max size, instance types)
 
-### GKE Autopilot
+**Events observed across clusters:**
 
-- Nodepools exist but are fully Google-managed (same label applies)
-- Users control scheduling via ComputeClasses, not nodepool config
-- Node-level access restricted (no SSH, no privileged DaemonSets)
-- Scheduling diagnosis is less meaningful since users don't control nodepools
+| Event Reason | Source | Target | Message Pattern |
+|---|---|---|---|
+| `NotTriggerScaleUp` | `GOATScaler` | Pod | `pod didn't trigger scale-up due to missing matching nodepool: N <reason>` |
+| `ProvisionNode` | `GOATScaler` | Pod | `Provision node <task-id> in Zone: <zone> with InstanceType: <type>` |
+| `NodePoolInventoryStatusChanged` | `GOATScaler` | ACKNodePool | `nodepool <id> inventory phase changed from <X> to <Y>` |
 
-### TKE Super Nodes
+**`cluster-autoscaler-status` ConfigMap does NOT exist** on any GOATScaler cluster (verified across 10 clusters).
 
-- Serverless scheduling layer (pods run on managed infra)
-- Appear as Node objects with special types if enabled
-- Not currently enabled on Rey's clusters
-- Have configurable taints/labels, pods auto-overflow when CVM nodes full
+**Source:** [ACK Instant Elasticity docs](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/instant-elasticity), [GOATScaler FAQ](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/faq-about-node-instant-scaling), live cluster inspection.
 
-### ACK Managed vs Self-managed
+### Detecting which autoscaler is active
 
-- Managed: ACK installs cluster-autoscaler automatically, supports ~20 autoscaled nodepools
-- Self-managed: deploy cluster-autoscaler yourself, integrate with ESS directly
-- Both use ESS scaling groups, same `alibabacloud.com/nodepool-id` label
+```
+1. Try Get ConfigMap "cluster-autoscaler-status" in kube-system
+   -> exists: standard cluster-autoscaler
+2. Try Get ConfigMap "autoscaler-meta" in kube-system
+   -> exists and scaler-type == "goatscaler": GOATScaler
+3. Neither exists: no autoscaler (or unknown)
+```
 
-### EKS Karpenter
+### Impact on fitcheck
 
-- Replaces nodegroup concept with NodePool CRD
-- No ASG underneath; Karpenter provisions EC2 instances directly
-- Status via NodePool/NodeClaim CRDs, not ConfigMap
-- Controller needs separate code path for Karpenter clusters
+For v0.0.1 (ACK only), fitcheck must handle GOATScaler:
+
+- **NodepoolNoStock**: read `InstanceInventoryStatusChanged` events on ACKNodePool objects (phase changed to UnHealthy)
+- **NodepoolCandidate**: read `ProvisionNode` events on pods (scale-up was triggered for this pod)
+- **Scale-up failure**: read `NotTriggerScaleUp` and `ProvisionNodeFailed` events on pods
+- **No ConfigMap parsing needed** for autoscaler state in GOATScaler mode. Events on pods and ACKNodePool objects provide sufficient signal.
+
+If standard cluster-autoscaler is detected instead, fall back to parsing `cluster-autoscaler-status` ConfigMap.
+
+## Stock Exhaustion Signals
+
+### ACK with GOATScaler (verified)
+
+GOATScaler emits `InstanceInventoryStatusChanged` events on ACKNodePool objects when ECS inventory becomes unavailable. The event message contains the phase transition (e.g. `Healthy to UnHealthy`).
+
+GOATScaler limitations from official docs:
+- Only simulates CPU, memory, ephemeral storage, GPU for scheduling fit
+- Cannot account for pod-level storage constraints or zone-specific requirements
+- Cannot verify preemptible instance inventory
+
+**Source:** [GOATScaler FAQ](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/faq-about-node-instant-scaling)
+
+### ACK with cluster-autoscaler
+
+Standard flow: `FailedScaleUp` event on pod, `cluster-autoscaler-status` ConfigMap shows Backoff. ACK-specific error: `OperationDenied.NoStock` from ESS API.
+
+**Source:** [ACK Autoscaling FAQ](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/faq-about-node-auto-scaling), [upstream alicloud provider](https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler/cloudprovider/alicloud)
+
+### Other providers
+
+| Provider | Error Signal | Where |
+|---|---|---|
+| GKE | `ZONE_RESOURCE_POOL_EXHAUSTED`, `GCE_STOCKOUT` | `ScaleUpFailed` event on pod |
+| TKE | `ResourceInsufficient` | `ScaleUpFailed` event, ConfigMap Backoff |
+| EKS (CA) | `InsufficientInstanceCapacity` | `FailedScaleUp` event on pod |
+| EKS (Karpenter) | `InsufficientInstanceCapacity` | Event on NodeClaim |
+
+## Node Taints (verified on live ACK clusters)
+
+GPU nodepools carry multiple taints. Non-GPU nodes have zero custom taints.
+
+Taints observed across clusters:
+
+| Taint Key | Value | Effect | Context |
+|---|---|---|---|
+| `nvidia.com/gpu` | `present` | NoSchedule | GPU nodes (standard NVIDIA taint) |
+| `node.gopay.sh/gpu` | `nvidia` | NoSchedule | Internal GPU identification |
+| `caraml/nvidia-l20` | `enabled` | NoSchedule | L20-specific workload isolation |
+| `profile` | e.g. `l20-1x` | NoSchedule | GPU profile taint |
+| `team` | e.g. `ds-identity` | NoSchedule | Team-scoped nodepools |
+| `workload` | e.g. `model` | NoSchedule | Workload-type isolation |
+| `node_type` | varies | NoSchedule | General node type taint |
+
+fitcheck must check all pod tolerations against all node taints per nodepool.
+
+## GPU Resources (verified on live ACK clusters)
+
+GPU availability is in `node.status.allocatable`:
+
+```json
+{
+    "cpu": "7488m",
+    "memory": "61715Mi",
+    "nvidia.com/gpu": "1",
+    "pods": "128"
+}
+```
+
+fitcheck checks `pod.spec.containers[].resources.requests` against `node.status.allocatable` for cpu, memory, and `nvidia.com/gpu`.
 
 ## RBAC
 
-Standard Kubernetes RBAC works identically across all 4 providers. No provider-specific quirks for reading pods, nodes, configmaps, events.
-
-### Required ClusterRole
+Standard Kubernetes RBAC works identically across all providers.
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -121,21 +170,12 @@ rules:
   - apiGroups: [""]
     resources: [configmaps]
     verbs: [get]
-    # scope to kube-system via resourceNames or namespace restriction
   - apiGroups: [""]
     resources: [events]
-    verbs: [create, patch]
+    verbs: [get, list, create, patch]
 ```
 
-### Cloud API access (optional, for richer stock error detail)
-
-If the controller wants to query cloud APIs for detailed capacity errors:
-- GKE: Workload Identity (GKE SA -> GCP SA)
-- ACK: RRSA (RAM Roles for Service Accounts via OIDC)
-- TKE: Standard RBAC sufficient for K8s-level data
-- EKS: Pod Identity (recommended) or IRSA
-
-This is optional; the ConfigMap + events provide enough signal without cloud API calls.
+Note: events now need `get, list` (not just `create, patch`) so fitcheck can read GOATScaler events on pods.
 
 ## Controller-Runtime Implementation
 
@@ -195,11 +235,9 @@ r.Recorder.Eventf(&pod, corev1.EventTypeWarning, "NodepoolRejected",
 
 ### Event deduplication
 
-The EventRecorder auto-deduplicates via EventCorrelator in client-go. Matching on Source + InvolvedObject + Type + Reason + Message. Identical events increment `.Count` and update `.LastTimestamp`. EventAggregator kicks in at 10 identical events in 10 minutes. No manual dedup tracking needed.
+The EventRecorder auto-deduplicates via EventCorrelator in client-go. Matching on Source + InvolvedObject + Type + Reason + Message. Identical events increment `.Count` and update `.LastTimestamp`. No manual dedup tracking needed.
 
 ### ConfigMap cache scoping
-
-To avoid caching all ConfigMaps cluster-wide, scope the cache:
 
 ```go
 mgr, _ := ctrl.NewManager(cfg, ctrl.Options{
@@ -219,55 +257,51 @@ mgr, _ := ctrl.NewManager(cfg, ctrl.Options{
 
 - Pod still Pending: `return reconcile.Result{RequeueAfter: 30 * time.Second}, nil`
 - Pod scheduled/deleted: `return reconcile.Result{}, nil` (stops requeue)
-- Error during reconcile: return error (triggers exponential backoff, ignores RequeueAfter)
+- Error during reconcile: return error (triggers exponential backoff)
 
 ## Configuration Matrix
 
-The controller needs a `--provider` flag or auto-detection to select the right nodepool label:
-
-| --provider | Nodepool label used | Autoscaler status source |
+| --provider | Nodepool label | Autoscaler status source |
 |---|---|---|
-| gke | cloud.google.com/gke-nodepool | ConfigMap |
-| ack | alibabacloud.com/nodepool-id | ConfigMap |
-| tke | tke.cloud.tencent.com/nodepool-id | ConfigMap (keyed by ASG ID) |
-| eks | eks.amazonaws.com/nodegroup | ConfigMap |
-| karpenter | karpenter.sh/nodepool | NodePool/NodeClaim CRDs |
+| ack | `alibabacloud.com/nodepool-id` | GOATScaler events or `cluster-autoscaler-status` CM (auto-detect) |
+| gke | `cloud.google.com/gke-nodepool` | `cluster-autoscaler-status` CM |
+| tke | `tke.cloud.tencent.com/nodepool-id` | `cluster-autoscaler-status` CM (keyed by ASG ID) |
+| eks | `eks.amazonaws.com/nodegroup` | `cluster-autoscaler-status` CM |
+| karpenter | `karpenter.sh/nodepool` | NodePool/NodeClaim CRDs |
 | auto | detect from node labels | detect from cluster state |
-
-Auto-detection: list nodes, check which provider label exists. For Karpenter: check if `karpenter.sh/nodepool` label exists on any node, or if NodePool CRD is registered.
 
 ## Unknowns
 
-- TKE stock error exact message: confidence 0.5. Could not observe `ResourceInsufficient` directly. Need to trigger a real stock exhaustion on TKE to confirm the exact error string. Mitigation: parse the event message generically for "insufficient", "stock", "capacity" keywords.
-- GKE Autopilot: scheduling diagnosis is less useful since nodepools are Google-managed. May want to skip or simplify output for Autopilot clusters.
-- Karpenter support adds significant complexity (CRD watches, different status model). Consider making it a v2 feature.
+- **GOATScaler `ProvisionNodeFailed` event**: documented but not observed on live clusters (no stock exhaustion occurred during inspection). Message format unknown.
+- **ACK with standard cluster-autoscaler**: no test clusters available with this config. Behavior assumed to match upstream.
+- TKE stock error exact message: confidence 0.5. Needs real observation.
+- Karpenter support: significant complexity (CRD watches). Consider v2.
 
 ## Sources
+
+### ACK
+- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/overview-of-node-scaling
+- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/instant-elasticity
+- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/faq-about-node-instant-scaling
+- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/schedule-an-application-pod-to-a-specific-node-pool
+- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/auto-scaling-of-nodes
+- https://github.com/AliyunContainerService/GOATScaler-Samples
+- https://registry.terraform.io/providers/aliyun/alicloud/latest/docs/resources/cs_autoscaling_config
+- https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler/cloudprovider/alicloud
 
 ### GKE
 - https://docs.cloud.google.com/kubernetes-engine/docs/concepts/node-pools
 - https://docs.cloud.google.com/kubernetes-engine/docs/concepts/cluster-autoscaler
-- https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-autoscaler-visibility
-- https://docs.cloud.google.com/kubernetes-engine/docs/troubleshooting/cluster-autoscaler-scale-up
-
-### ACK
-- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/schedule-an-application-pod-to-a-specific-node-pool
-- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/faq-about-node-auto-scaling
-- https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/auto-scaling-of-nodes
-- https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler/cloudprovider/alicloud
 
 ### TKE
 - https://intl.cloud.tencent.com/ind/document/product/457/65833
 - https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler/cloudprovider/tencentcloud
-- https://github.com/TencentCloud/karpenter-provider-tke
 
 ### EKS
 - https://docs.aws.amazon.com/eks/latest/userguide/managed-node-groups.html
 - https://karpenter.sh/docs/concepts/nodepools/
-- https://docs.aws.amazon.com/eks/latest/best-practices/cas.html
 
 ### Controller-Runtime
 - https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile
 - https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/predicate
-- https://book.kubebuilder.io/cronjob-tutorial/controller-implementation.html
 - https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md
