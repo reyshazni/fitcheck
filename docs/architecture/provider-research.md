@@ -12,30 +12,31 @@
 
 ### ACK node labels: what comes from where
 
-Verified across multiple ACK clusters. Each label is categorized by origin so fitcheck only depends on guaranteed ACK defaults.
+Verified on live ACK clusters. Each label is categorized by origin so fitcheck only depends on guaranteed ACK defaults.
 
-#### ACK platform labels (present on every ACK node, safe to depend on)
+#### ACK platform labels (safe to depend on)
 
-| Label | Present | Source |
-|---|---|---|
-| `alibabacloud.com/nodepool-id` | 24/24 | [ACK docs](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/schedule-an-application-pod-to-a-specific-node-pool): "automatically creates a globally unique label" |
-| `node.alibabacloud.com/nodepool-id` | 24/24 | Undocumented, identical value to above. Likely newer prefix. |
-| `alibabacloud.com/ecs-instance-id` | 24/24 | ACK node init |
-| `node.alibabacloud.com/instance-charge-type` | 24/24 | ACK: `PostPaid`, `PrePaid` |
-| `node.alibabacloud.com/spot-strategy` | 24/24 | ACK: `NoSpot`, `SpotWithPriceLimit`, etc. |
-| `ack.aliyun.com` | 24/24 | ACK cluster ID |
-| `k8s.aliyun.com` | 24/24 | ACK marker |
+These labels are applied by ACK to every node automatically.
 
-#### ACK GPU labels (present on GPU nodes, from ACK device plugin)
+| Label | Source |
+|---|---|
+| `alibabacloud.com/nodepool-id` | [ACK docs](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/schedule-an-application-pod-to-a-specific-node-pool): "automatically creates a globally unique label" |
+| `node.alibabacloud.com/nodepool-id` | Undocumented, identical value to above. Likely newer prefix. |
+| `alibabacloud.com/ecs-instance-id` | ACK node init |
+| `node.alibabacloud.com/instance-charge-type` | ACK: `PostPaid`, `PrePaid` |
+| `node.alibabacloud.com/spot-strategy` | ACK: `NoSpot`, `SpotWithPriceLimit`, etc. |
+| `ack.aliyun.com` | ACK cluster ID |
 
-| Label | Present | Source |
-|---|---|---|
-| `aliyun.accelerator/nvidia_name` | 3/24 | ACK GPU plugin: `NVIDIA-L20`, `NVIDIA-A10` |
-| `aliyun.accelerator/nvidia_count` | 2/24 | GPU count per node |
-| `aliyun.accelerator/nvidia_mem` | 2/24 | GPU memory (e.g. `46068MiB`) |
-| `ack.node.gpu.schedule` | 3/24 | ACK GPU scheduling mode: `default` |
+#### ACK GPU labels (GPU nodes only, from ACK device plugin)
 
-#### Standard Kubernetes labels (present on every node)
+| Label | Source |
+|---|---|
+| `aliyun.accelerator/nvidia_name` | ACK GPU plugin: e.g. `NVIDIA-L20`, `NVIDIA-A10` |
+| `aliyun.accelerator/nvidia_count` | GPU count per node |
+| `aliyun.accelerator/nvidia_mem` | GPU memory in MiB |
+| `ack.node.gpu.schedule` | ACK GPU scheduling mode |
+
+#### Standard Kubernetes labels
 
 | Label | Source |
 |---|---|
@@ -43,33 +44,27 @@ Verified across multiple ACK clusters. Each label is categorized by origin so fi
 | `kubernetes.io/arch`, `kubernetes.io/os` | kubelet |
 | `topology.kubernetes.io/region`, `topology.kubernetes.io/zone` | cloud provider |
 
-#### GOATScaler labels (present when GOATScaler is active, from ACK)
+#### GOATScaler labels (present when GOATScaler is active)
 
-| Label | Present | Source |
-|---|---|---|
-| `goatscaler.io/managed` | 24/24 | GOATScaler: `true` on all managed nodes |
-| `goatscaler.io/provision-task-id` | 24/24 | GOATScaler: scale-out task ID |
+| Label | Source |
+|---|---|
+| `goatscaler.io/managed` | GOATScaler: `true` on all managed nodes |
+| `goatscaler.io/provision-task-id` | GOATScaler: scale-out task ID |
 
-#### User-configured labels (org-specific, NOT from ACK)
+#### User-configured labels (NOT from ACK)
 
 These are set per nodepool by the cluster operator. They vary between organizations and MUST NOT be hardcoded in fitcheck.
 
-| Label | Example | Notes |
-|---|---|---|
-| `name` | `compute-optimized-nodepool-01` | User-defined nodepool name. Configured in nodepool settings, NOT an ACK default. Present on all nodes but value is org-specific. |
-| `environment` | `staging`, `production` | Org-specific |
-| `stream`, `pod`, `policy` | varies | Org-specific workload routing |
-| `component` | `kubernetes-nodepool` | Org-specific |
-| `node.gopay.sh/*` | `lifecycle=on_demand` | Org-specific |
-| `caraml/*` | `nvidia-l20=enabled` | Org-specific ML platform |
-| `team`, `workload`, `profile` | varies | Org-specific workload isolation |
+Common patterns observed:
+- `name`: human-readable nodepool name. Configured in nodepool settings, not an ACK default.
+- `environment`, `team`, `workload`, `profile`: workload routing labels specific to each organization.
 
 **fitcheck implications:**
 - Use `alibabacloud.com/nodepool-id` as the nodepool grouping key (guaranteed by ACK).
 - For human-readable nodepool names in event messages, use the `name` label if present. Fall back to the nodepool ID if `name` is not set. Do not require `name` to exist.
 - Do not hardcode any org-specific label keys.
 
-**Source:** Live cluster inspection across ACK clusters, cross-referenced with `autoscaler-meta` ConfigMap `scaling_configurations.labels` field.
+**Source:** [ACK docs](https://www.alibabacloud.com/help/en/ack/ack-managed-and-ack-dedicated/user-guide/schedule-an-application-pod-to-a-specific-node-pool), verified on live ACK clusters.
 
 ## ACK Autoscaler: Two Modes
 
@@ -160,7 +155,7 @@ Standard flow: `FailedScaleUp` event on pod, `cluster-autoscaler-status` ConfigM
 
 ## Node Taints (verified on live ACK clusters)
 
-Only 3/24 nodes (GPU nodes) have custom taints. Non-GPU nodes have zero custom taints.
+GPU nodes typically have taints. Non-GPU nodes typically have zero custom taints.
 
 ### Standard taints (from K8s or NVIDIA device plugin)
 
@@ -170,18 +165,9 @@ Only 3/24 nodes (GPU nodes) have custom taints. Non-GPU nodes have zero custom t
 | `node.kubernetes.io/disk-pressure` | NoSchedule | kubelet (automatic, transient) |
 | `node.kubernetes.io/unschedulable` | NoSchedule | kubelet (cordoned nodes) |
 
-### User-configured taints (org-specific, NOT from ACK)
+### User-configured taints (NOT from ACK)
 
-These are set per nodepool by the cluster operator. They vary between organizations.
-
-| Taint | Example | Org |
-|---|---|---|
-| `node.gopay.sh/gpu=nvidia` | NoSchedule | org-specific |
-| `caraml/nvidia-l20=enabled` | NoSchedule | org-specific |
-| `profile=l20-1x` | NoSchedule | org-specific |
-| `team=ds-identity` | NoSchedule | org-specific |
-| `workload=model` | NoSchedule | org-specific |
-| `node_type=memory-optimized-amd` | NoSchedule | org-specific |
+Cluster operators commonly add custom taints to GPU nodepools or specialized nodepools for workload isolation (e.g. team-scoped, workload-type, GPU profile). These vary per organization.
 
 **fitcheck implications:**
 - fitcheck checks ALL taints on nodes against ALL tolerations on pods. It does not need to know which taints are standard vs custom.
