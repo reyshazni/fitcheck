@@ -10,7 +10,7 @@ import (
 
 func TestNodepoolDiagnosis_Accepted(t *testing.T) {
 	d := diagnosis.NodepoolDiagnosis{
-		NodepoolID:   "pool-1",
+		NodepoolID:   testPoolID1,
 		NodepoolName: "gpu-pool",
 		Verdict:      diagnosis.Accepted,
 		FittingNodes: 2,

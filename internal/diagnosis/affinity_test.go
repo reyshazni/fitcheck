@@ -131,7 +131,7 @@ func TestCheckNodeAffinity_OperatorDoesNotExist(t *testing.T) {
 			NodeSelectorTerms: []corev1.NodeSelectorTerm{
 				{
 					MatchExpressions: []corev1.NodeSelectorRequirement{
-						{Key: "tainted", Operator: corev1.NodeSelectorOpDoesNotExist},
+						{Key: testValueTainted, Operator: corev1.NodeSelectorOpDoesNotExist},
 					},
 				},
 			},

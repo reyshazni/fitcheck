@@ -10,13 +10,17 @@ import (
 
 const (
 	taintKeyDedicated = "dedicated"
+	taintKeySpecial   = "special"
 	testValueGPU      = "gpu"
 	testValueTrue     = "true"
 	testValueFalse    = "false"
+	testValueTainted  = "tainted"
 	testZoneEast1a    = "us-east-1a"
 	testLabelZone     = "zone"
 	testZoneEast      = "us-east"
 	testZoneWest      = "us-west"
+	testPoolID1       = "pool-1"
+	testNodeName1     = "node-1"
 )
 
 func TestCheckTaints_AllTolerated(t *testing.T) {
@@ -58,7 +62,7 @@ func TestCheckTaints_EmptyTaints(t *testing.T) {
 func TestCheckTaints_WildcardToleration(t *testing.T) {
 	taints := []corev1.Taint{
 		{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
-		{Key: "special", Value: testValueTrue, Effect: corev1.TaintEffectNoExecute},
+		{Key: taintKeySpecial, Value: testValueTrue, Effect: corev1.TaintEffectNoExecute},
 	}
 	tolerations := []corev1.Toleration{
 		{Operator: corev1.TolerationOpExists},
