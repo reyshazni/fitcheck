@@ -64,43 +64,8 @@ func TestFormatEventSummary_AllRejected(t *testing.T) {
 }
 
 func TestFormatEventSummary_Mixed(t *testing.T) {
-	diagnoses := []diagnosis.NodepoolDiagnosis{
-		{NodepoolName: poolA, Verdict: diagnosis.Accepted, FittingNodes: 2, TotalNodes: 2},
-		{NodepoolName: poolB, Verdict: diagnosis.Accepted, FittingNodes: 1, TotalNodes: 1},
-		{
-			NodepoolName: poolC,
-			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: reasonTaintX},
-			TotalNodes:   3,
-		},
-		{
-			NodepoolName: poolD,
-			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryNodeSelector, Reason: "selector Y"},
-			TotalNodes:   1,
-		},
-		{
-			NodepoolName: poolE,
-			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "resources"},
-			TotalNodes:   2,
-		},
-		{
-			NodepoolName: poolF,
-			Verdict:      diagnosis.NoStock,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: reasonInvUnhealthy},
-			TotalNodes:   0,
-		},
-		{
-			NodepoolName: poolG,
-			Verdict:      diagnosis.Candidate,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "scale-up triggered"},
-			TotalNodes:   1,
-		},
-	}
-
-	got := diagnosis.FormatEventSummary(diagnoses)
-	want := "2/7 nodepools fit | rejected: 1 taint, 1 selector, 1 resource | no-stock: 1 | candidate: 1"
+	got := diagnosis.FormatEventSummary(mixedDiagnoses())
+	want := mixedSummary
 
 	if got != want {
 		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
@@ -181,7 +146,7 @@ func TestFormatEventSummary_CategoryOrdering(t *testing.T) {
 		{
 			NodepoolName: poolB,
 			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: "taint"},
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: verdictTaint},
 			TotalNodes:   1,
 		},
 		{
