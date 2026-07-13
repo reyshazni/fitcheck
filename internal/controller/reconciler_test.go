@@ -22,13 +22,15 @@ import (
 )
 
 const (
-	defaultNamespace = "default"
-	pendingPodName   = "pending-pod"
-	runningPodName   = "running-pod"
-	gonePodName      = "gone-pod"
-	annotatedPodName = "annotated-pod"
-	containerName    = "main"
-	nameLabelKey     = "name"
+	defaultNamespace  = "default"
+	pendingPodName    = "pending-pod"
+	runningPodName    = "running-pod"
+	gonePodName       = "gone-pod"
+	annotatedPodName  = "annotated-pod"
+	wasPendingPodName = "was-pending-pod"
+	cleanRunningPod   = "clean-running-pod"
+	containerName     = "main"
+	nameLabelKey      = "name"
 )
 
 func testScheme() *runtime.Scheme {
@@ -280,5 +282,80 @@ func TestReconcile_PendingPod_WritesAnnotation(t *testing.T) {
 	}
 	if len(report.Nodepools) == 0 {
 		t.Error("report.Nodepools is empty")
+	}
+}
+
+func TestReconcile_RunningPod_RemovesAnnotation(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wasPendingPodName,
+			Namespace: defaultNamespace,
+			Annotations: map[string]string{
+				diagnosis.AnnotationKey: `{"timestamp":"2026-07-13T00:00:00Z","summary":"test","nodepools":[]}`,
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        ack.New(),
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    10 * time.Second,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: wasPendingPodName, Namespace: defaultNamespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	var updated corev1.Pod
+	if err := cl.Get(context.Background(), req.NamespacedName, &updated); err != nil {
+		t.Fatalf("getting updated pod: %v", err)
+	}
+
+	if _, ok := updated.Annotations[diagnosis.AnnotationKey]; ok {
+		t.Errorf("expected annotation %q to be removed", diagnosis.AnnotationKey)
+	}
+}
+
+func TestReconcile_RunningPod_NoAnnotation_NoPatch(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cleanRunningPod,
+			Namespace: defaultNamespace,
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        ack.New(),
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    10 * time.Second,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: cleanRunningPod, Namespace: defaultNamespace}}
+	result, err := r.Reconcile(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	if result.RequeueAfter != 0 {
+		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
 	}
 }

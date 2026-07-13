@@ -40,6 +40,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	}
 
 	if pod.Status.Phase != corev1.PodPending {
+		r.removeAnnotation(ctx, &pod)
 		return ctrl.Result{}, nil
 	}
 
@@ -150,6 +151,19 @@ func (r *PodReconciler) writeAnnotation(
 
 	if err := r.Client.Patch(ctx, pod, patch); err != nil {
 		slog.Warn("failed to write diagnosis annotation", "error", err, "pod", pod.Name)
+	}
+}
+
+func (r *PodReconciler) removeAnnotation(ctx context.Context, pod *corev1.Pod) {
+	if _, ok := pod.Annotations[diagnosis.AnnotationKey]; !ok {
+		return
+	}
+
+	patch := client.MergeFrom(pod.DeepCopy())
+	delete(pod.Annotations, diagnosis.AnnotationKey)
+
+	if err := r.Client.Patch(ctx, pod, patch); err != nil {
+		slog.Warn("failed to remove diagnosis annotation", "error", err, "pod", pod.Name)
 	}
 }
 
