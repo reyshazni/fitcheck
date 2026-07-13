@@ -1,210 +1,207 @@
 package diagnosis_test
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/reyshazni/fitcheck/internal/diagnosis"
 )
 
 const (
-	summaryPoolAlpha   = "alpha"
-	summaryPoolBravo   = "bravo"
-	summaryPoolCharlie = "charlie"
-	summaryPoolDelta   = "delta"
-	summaryPoolEcho    = "echo"
-	summaryPoolFoxtrot = "foxtrot"
-	summaryPoolGolf    = "golf"
+	poolA              = "pool-a"
+	poolB              = "pool-b"
+	poolC              = "pool-c"
+	poolD              = "pool-d"
+	poolE              = "pool-e"
+	poolF              = "pool-f"
+	poolG              = "pool-g"
+	reasonTaintX       = "taint X"
+	reasonInvUnhealthy = "inventory unhealthy"
 )
 
-func TestFormatSummary_AcceptedOnly(t *testing.T) {
+func TestFormatEventSummary_AllAccepted(t *testing.T) {
 	diagnoses := []diagnosis.NodepoolDiagnosis{
-		{
-			NodepoolName: summaryPoolAlpha,
-			Verdict:      diagnosis.Accepted,
-			FittingNodes: 2,
-			TotalNodes:   3,
-		},
-		{
-			NodepoolName: summaryPoolBravo,
-			Verdict:      diagnosis.Accepted,
-			FittingNodes: 1,
-			TotalNodes:   1,
-		},
-		{
-			NodepoolName: summaryPoolCharlie,
-			Verdict:      diagnosis.Accepted,
-			FittingNodes: 5,
-			TotalNodes:   5,
-		},
+		{NodepoolName: poolA, Verdict: diagnosis.Accepted, FittingNodes: 2, TotalNodes: 3},
+		{NodepoolName: poolB, Verdict: diagnosis.Accepted, FittingNodes: 1, TotalNodes: 1},
+		{NodepoolName: poolC, Verdict: diagnosis.Accepted, FittingNodes: 5, TotalNodes: 5},
 	}
 
-	normal, warning := diagnosis.FormatSummary(diagnoses)
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "3/3 nodepools fit"
 
-	wantNormal := "[accepted] alpha(2/3), bravo(1/1), charlie(5/5)"
-	if normal != wantNormal {
-		t.Errorf("normal = %q, want %q", normal, wantNormal)
-	}
-
-	if warning != "" {
-		t.Errorf("warning = %q, want empty", warning)
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
 	}
 }
 
-func TestFormatSummary_RejectedOnly(t *testing.T) {
+func TestFormatEventSummary_AllRejected(t *testing.T) {
 	diagnoses := []diagnosis.NodepoolDiagnosis{
 		{
-			NodepoolName: summaryPoolAlpha,
+			NodepoolName: poolA,
 			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryTaint,
-				Reason:   "taint workload_type=nfs",
-			},
-			TotalNodes: 2,
-		},
-		{
-			NodepoolName: summaryPoolBravo,
-			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryTaint,
-				Reason:   "taint nvidia:NoSchedule",
-			},
-			TotalNodes: 1,
-		},
-	}
-
-	normal, warning := diagnosis.FormatSummary(diagnoses)
-
-	if normal != "" {
-		t.Errorf("normal = %q, want empty", normal)
-	}
-
-	wantWarning := "[rejected] alpha: taint workload_type=nfs, bravo: taint nvidia:NoSchedule"
-	if warning != wantWarning {
-		t.Errorf("warning = %q, want %q", warning, wantWarning)
-	}
-}
-
-func TestFormatSummary_MixedVerdicts(t *testing.T) {
-	diagnoses := []diagnosis.NodepoolDiagnosis{
-		{
-			NodepoolName: summaryPoolAlpha,
-			Verdict:      diagnosis.Accepted,
-			FittingNodes: 2,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: reasonTaintX},
 			TotalNodes:   2,
 		},
 		{
-			NodepoolName: summaryPoolBravo,
-			Verdict:      diagnosis.Accepted,
-			FittingNodes: 1,
+			NodepoolName: poolB,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity Y"},
 			TotalNodes:   1,
 		},
 		{
-			NodepoolName: summaryPoolCharlie,
+			NodepoolName: poolC,
 			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryTaint,
-				Reason:   "taint X",
-			},
-			TotalNodes: 3,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity Z"},
+			TotalNodes:   3,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/3 nodepools fit | rejected: 1 taint, 2 affinity"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatEventSummary_Mixed(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{NodepoolName: poolA, Verdict: diagnosis.Accepted, FittingNodes: 2, TotalNodes: 2},
+		{NodepoolName: poolB, Verdict: diagnosis.Accepted, FittingNodes: 1, TotalNodes: 1},
+		{
+			NodepoolName: poolC,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: reasonTaintX},
+			TotalNodes:   3,
 		},
 		{
-			NodepoolName: summaryPoolDelta,
+			NodepoolName: poolD,
 			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryNodeSelector,
-				Reason:   "selector Y",
-			},
-			TotalNodes: 1,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryNodeSelector, Reason: "selector Y"},
+			TotalNodes:   1,
 		},
 		{
-			NodepoolName: summaryPoolEcho,
+			NodepoolName: poolE,
 			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryResources,
-				Reason:   "resources",
-			},
-			TotalNodes: 2,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "resources"},
+			TotalNodes:   2,
 		},
 		{
-			NodepoolName: summaryPoolFoxtrot,
+			NodepoolName: poolF,
 			Verdict:      diagnosis.NoStock,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryResources,
-				Reason:   "inventory unhealthy",
-			},
-			TotalNodes: 0,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: reasonInvUnhealthy},
+			TotalNodes:   0,
 		},
 		{
-			NodepoolName: summaryPoolGolf,
+			NodepoolName: poolG,
 			Verdict:      diagnosis.Candidate,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryResources,
-				Reason:   "scale-up triggered",
-			},
-			TotalNodes: 1,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "scale-up triggered"},
+			TotalNodes:   1,
 		},
 	}
 
-	normal, warning := diagnosis.FormatSummary(diagnoses)
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "2/7 nodepools fit | rejected: 1 taint, 1 selector, 1 resource | no-stock: 1 | candidate: 1"
 
-	wantNormal := "[accepted] alpha(2/2), bravo(1/1)"
-	if normal != wantNormal {
-		t.Errorf("normal = %q, want %q", normal, wantNormal)
-	}
-
-	wantWarning := "[rejected] charlie: taint X, delta: selector Y, echo: resources\n" +
-		"[no-stock] foxtrot: inventory unhealthy\n" +
-		"[candidate] golf: scale-up triggered"
-	if warning != wantWarning {
-		t.Errorf("warning = %q, want %q", warning, wantWarning)
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
 	}
 }
 
-func TestFormatSummary_TruncationAt1kB(t *testing.T) {
-	diagnoses := make([]diagnosis.NodepoolDiagnosis, 0, 50)
+func TestFormatEventSummary_Empty(t *testing.T) {
+	got := diagnosis.FormatEventSummary(nil)
 
-	for i := range 50 {
-		diagnoses = append(diagnoses, diagnosis.NodepoolDiagnosis{
-			NodepoolName: fmt.Sprintf("long-nodepool-name-%03d", i),
+	if got != "" {
+		t.Errorf("FormatEventSummary() = %q, want empty", got)
+	}
+}
+
+func TestFormatEventSummary_SingleAccepted(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{NodepoolName: poolA, Verdict: diagnosis.Accepted, FittingNodes: 1, TotalNodes: 1},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "1/1 nodepools fit"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatEventSummary_SingleRejected(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
 			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryTaint,
-				Reason: fmt.Sprintf(
-					"taint workload_type=special-value-%03d:NoSchedule not tolerated", i,
-				),
-			},
-			TotalNodes: 3,
-		})
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "cpu insufficient"},
+			TotalNodes:   3,
+		},
 	}
 
-	_, warning := diagnosis.FormatSummary(diagnoses)
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/1 nodepools fit | rejected: 1 resource"
 
-	if len(warning) > 1000 {
-		t.Errorf("warning length = %d, want <= 1000", len(warning))
-	}
-
-	if warning == "" {
-		t.Error("warning should not be empty with 50 rejected pools")
-	}
-
-	wantSuffix := "more"
-	if !strings.HasSuffix(warning, wantSuffix) {
-		tail := warning[len(warning)-30:]
-		t.Errorf("warning should end with %q, got tail: %q",
-			wantSuffix, tail)
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
 	}
 }
 
-func TestFormatSummary_EmptyDiagnoses(t *testing.T) {
-	normal, warning := diagnosis.FormatSummary(nil)
-
-	if normal != "" {
-		t.Errorf("normal = %q, want empty", normal)
+func TestFormatEventSummary_NoStockOnly(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
+			Verdict:      diagnosis.NoStock,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: reasonInvUnhealthy},
+			TotalNodes:   0,
+		},
+		{
+			NodepoolName: poolB,
+			Verdict:      diagnosis.NoStock,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: reasonInvUnhealthy},
+			TotalNodes:   0,
+		},
 	}
 
-	if warning != "" {
-		t.Errorf("warning = %q, want empty", warning)
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/2 nodepools fit | no-stock: 2"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatEventSummary_CategoryOrdering(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "cpu"},
+			TotalNodes:   1,
+		},
+		{
+			NodepoolName: poolB,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: "taint"},
+			TotalNodes:   1,
+		},
+		{
+			NodepoolName: poolC,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity"},
+			TotalNodes:   1,
+		},
+		{
+			NodepoolName: poolD,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryNodeSelector, Reason: "selector"},
+			TotalNodes:   1,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/4 nodepools fit | rejected: 1 taint, 1 selector, 1 affinity, 1 resource"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
 	}
 }

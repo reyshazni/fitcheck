@@ -14,7 +14,7 @@ func TestDiagnoseAll(t *testing.T) {
 
 	nodepools := []diagnosis.NodepoolInfo{
 		{
-			ID:   "pool-a",
+			ID:   poolA,
 			Name: "fits",
 			Nodes: []diagnosis.NodeInfo{
 				{
@@ -28,7 +28,7 @@ func TestDiagnoseAll(t *testing.T) {
 			},
 		},
 		{
-			ID:   "pool-b",
+			ID:   poolB,
 			Name: "too-small",
 			Nodes: []diagnosis.NodeInfo{
 				{
