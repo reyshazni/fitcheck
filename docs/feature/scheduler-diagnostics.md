@@ -65,8 +65,9 @@ The event message reports the first matching rejection reason (most specific).
 - Re-evaluates every 30s while pod remains Pending
 - Only emits new events when diagnosis changes (no spam)
 - Stops processing once pod is Scheduled or deleted
-- Reads cluster-autoscaler-status ConfigMap for autoscaler state per nodepool
-- Reads autoscaler events on the pod (TriggeredScaleUp, NotTriggerScaleUp, FailedScaleUp) and correlates them
+- Detects active autoscaler (GOATScaler or cluster-autoscaler) from ConfigMaps in kube-system
+- Reads autoscaler events on the pod (ProvisionNode, ProvisionNodeFailed, NotTriggerScaleUp for GOATScaler; TriggeredScaleUp, FailedScaleUp for cluster-autoscaler)
+- Reads InstanceInventoryStatusChanged events on ACKNodePool objects for stock status (GOATScaler)
 
 ## Example
 
