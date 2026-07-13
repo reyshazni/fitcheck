@@ -196,3 +196,15 @@ func TestFormatSummary_TruncationAt1kB(t *testing.T) {
 			wantSuffix, tail)
 	}
 }
+
+func TestFormatSummary_EmptyDiagnoses(t *testing.T) {
+	normal, warning := diagnosis.FormatSummary(nil)
+
+	if normal != "" {
+		t.Errorf("normal = %q, want empty", normal)
+	}
+
+	if warning != "" {
+		t.Errorf("warning = %q, want empty", warning)
+	}
+}
