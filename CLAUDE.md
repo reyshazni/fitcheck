@@ -23,9 +23,10 @@ Single binary, one reconciler. Watches Pending pods, groups cluster nodes by nod
 3. List nodes, group by nodepool label
 4. Per nodepool: check taints, nodeSelector, affinity, resources, anti-affinity, topology spread
 5. Read autoscaler ConfigMap for scaling state per nodegroup
-6. Emit Events: NodepoolAccepted, NodepoolRejected, NodepoolCandidate, NodepoolNoStock
-7. Requeue every `--recheck-interval` (30s) while pod remains Pending
-8. Stop when pod is Scheduled or deleted
+6. Emit single `FitcheckDiagnosis` event with one-line summary on the pod
+7. Write full per-nodepool JSON to `fitcheck.io/diagnosis` annotation on the pod
+8. Requeue every `--recheck-interval` (30s) while pod remains Pending
+9. Stop when pod is Scheduled or deleted (annotation is cleaned up when pod leaves Pending)
 
 Event deduplication handled by standard Kubernetes EventRecorder (EventCorrelator in client-go).
 
@@ -56,7 +57,8 @@ docs/
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `--bind-addr` | `:8080` | Single HTTP port for /metrics, /healthz, /readyz |
+| `--metrics-addr` | `:8080` | Prometheus metrics bind address |
+| `--health-addr` | `:8081` | Health probe bind address (/healthz, /readyz) |
 | `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
 | `--initial-delay` | `10s` | Delay before first diagnosis |
 | `--namespace` | (all) | Restrict to specific namespace |
@@ -73,7 +75,7 @@ Provider is auto-detected from cluster node labels at startup. No `--provider` f
 | EKS (Karpenter) | `karpenter.sh/nodepool` | NodePool/NodeClaim CRDs |
 | TKE (Tencent) | `tke.cloud.tencent.com/nodepool-id` | ConfigMap |
 
-Auto-detection via `--provider=auto`.
+Provider is auto-detected from cluster node labels at startup. No flag needed.
 
 ## Commands
 
@@ -87,7 +89,7 @@ make docker-build   # build container image
 
 ## RBAC
 
-Minimal: read pods/nodes/configmaps, create events. Runs in kube-system as a single-replica Deployment.
+Minimal: read pods/nodes/configmaps, patch pods (for annotation writes), create/patch events (core and events.k8s.io groups). Runs in kube-system as a single-replica Deployment.
 
 ## Deployment
 

@@ -21,10 +21,13 @@ Pending Pod (watch)
        |     +-- Check pod anti-affinity
        |     +-- Check topology spread
        |     +-- Check autoscaler state (ConfigMap)
-       |     +-- Emit verdict: Accepted / Rejected / Candidate / NoStock
+       |     +-- Determine verdict: Accepted / Rejected / Candidate / NoStock
+       |
+       +-- Emit single FitcheckDiagnosis event (one-line summary)
+       +-- Write fitcheck.io/diagnosis annotation (full JSON detail)
        |
        v
-  Events on Pod (visible via kubectl describe)
+  Event + annotation on Pod (visible via kubectl describe / kubectl get -o jsonpath)
 ```
 
 ## Reconciler lifecycle
@@ -32,9 +35,10 @@ Pending Pod (watch)
 1. Pod enters Pending state, which triggers reconcile
 2. Controller waits `--initial-delay` (default 10s) to let the scheduler attempt first
 3. Diagnoses scheduling fit per nodepool
-4. Emits Events on the pod with per-nodepool verdicts
-5. Requeues every `--recheck-interval` (default 30s) while pod remains Pending
-6. Stops processing once pod is Scheduled or deleted
+4. Emits a single `FitcheckDiagnosis` event with a one-line summary on the pod
+5. Writes full per-nodepool JSON to the `fitcheck.io/diagnosis` annotation on the pod
+6. Requeues every `--recheck-interval` (default 30s) while pod remains Pending
+7. Stops processing once pod is Scheduled or deleted (annotation is cleaned up when pod leaves Pending)
 
 ## Scheduling dimensions checked (in order)
 
@@ -64,7 +68,7 @@ This enables NodepoolNoStock and NodepoolCandidate verdicts, answering "would th
 | EKS (Karpenter) | `karpenter.sh/nodepool` | NodePool/NodeClaim CRDs |
 | TKE (Tencent) | `tke.cloud.tencent.com/nodepool-id` | ConfigMap (keyed by ASG ID) |
 
-Auto-detection available via `--provider=auto`.
+Provider is auto-detected from cluster node labels at startup. No flag needed.
 
 ## Event deduplication
 

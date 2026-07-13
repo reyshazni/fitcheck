@@ -20,29 +20,43 @@ Zero client-side tooling required. The information appears natively in pod Event
 
 A Kubernetes controller running in kube-system that watches Pending pods, diagnoses scheduling fit per nodepool, and writes the results as Events on the pod.
 
-## Event Types
+## Event Format
 
-The controller emits these Events on Pending pods:
+The controller emits a single `FitcheckDiagnosis` event per reconcile on Pending pods:
 
 | Reason | Type | When |
 |---|---|---|
-| NodepoolAccepted | Normal | Pod fits on existing node(s) in this nodepool |
-| NodepoolCandidate | Normal | Pod would fit if nodepool scales up |
-| NodepoolRejected | Warning | Pod cannot schedule on this nodepool |
-| NodepoolNoStock | Warning | Autoscaler cannot scale this nodepool (backoff, stock, max size) |
+| FitcheckDiagnosis | Normal | All nodepools can accept the pod |
+| FitcheckDiagnosis | Warning | Any nodepool is rejected, no-stock, or candidate |
 
-## Event Message Format
-
-Each event message starts with `nodepool/<name>:` followed by the reason.
+The event message is a one-line summary:
 
 ```
-nodepool/dsp-general: 2 of 3 nodes fit (cpu=2/8 avail, mem=4Gi/16Gi avail)
-nodepool/ml-training: taint {team=ml:NoSchedule} not tolerated
-nodepool/system: nodeSelector {team=dsp} not matched
-nodepool/dsp-highmem: Insufficient cpu (requested=2, max allocatable=1.5)
-nodepool/dsp-spot: autoscaler backoff - FailedScaleUp (insufficient China-East-2 inventory)
-nodepool/dsp-general: would fit on new node, but autoscaler in backoff
+2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1
 ```
+
+## Annotation Diagnostics
+
+Full per-nodepool detail is written to the `fitcheck.io/diagnosis` annotation on the pod:
+
+```json
+{
+  "timestamp": "2026-07-13T17:55:31Z",
+  "summary": "2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2",
+  "nodepools": [
+    {"name": "general-pool", "verdict": "accepted", "fitting": 3, "total": 5},
+    {"name": "gpu-pool", "verdict": "rejected", "reason": "taint nvidia.com/gpu=present:NoSchedule not tolerated", "category": "taint"}
+  ]
+}
+```
+
+Query the annotation:
+
+```bash
+kubectl get pod <name> -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
+```
+
+The annotation is automatically removed when the pod leaves Pending state.
 
 ## Rejection Categories
 
@@ -76,32 +90,33 @@ $ kubectl describe pod my-ml-job
 
 ...
 Events:
-  Type     Reason             Age  From                  Message
-  ----     ------             ---  ----                  -------
-  Warning  FailedScheduling   5m   default-scheduler     0/12 nodes available: 4 had taint, 5 Insufficient cpu, 3 node(s) didn't match node selector
-  Normal   NodepoolAccepted   4m   fitcheck    nodepool/dsp-general: 2 of 3 nodes fit (cpu=2/8 avail, mem=4Gi/16Gi avail)
-  Warning  NodepoolRejected   4m   fitcheck    nodepool/ml-training: taint {team=ml:NoSchedule} not tolerated
-  Warning  NodepoolRejected   4m   fitcheck    nodepool/system: nodeSelector {team=dsp} not matched
-  Warning  NodepoolRejected   4m   fitcheck    nodepool/dsp-highmem: Insufficient cpu (requested=2, max allocatable=1.5)
-  Warning  NodepoolNoStock    4m   fitcheck    nodepool/dsp-spot: autoscaler backoff - FailedScaleUp (insufficient China-East-2 inventory)
-  Normal   NodepoolCandidate  4m   fitcheck    nodepool/dsp-general: would fit on new node, but autoscaler in backoff
+  Type     Reason              Age  From               Message
+  ----     ------              ---  ----               -------
+  Warning  FailedScheduling    5m   default-scheduler  0/12 nodes available: 4 had taint, 5 Insufficient cpu, 3 node(s) didn't match node selector
+  Warning  FitcheckDiagnosis   4m   fitcheck           2/6 nodepools fit | rejected: 2 taint, 1 affinity, 1 resource | no-stock: 1
+```
+
+Full per-nodepool breakdown is available via the `fitcheck.io/diagnosis` annotation:
+
+```bash
+kubectl get pod my-ml-job -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
 ```
 
 ## Configuration
 
 | Flag | Default | Purpose |
 |---|---|---|
-| --nodepool-label | node.kubernetes.io/nodepool | Label key for grouping nodes into nodepools |
-| --recheck-interval | 30s | Re-evaluation interval for pending pods |
-| --initial-delay | 10s | Delay before first diagnosis |
-| --namespace | (all) | Restrict to specific namespace |
-| --autoscaler-configmap | cluster-autoscaler-status | ConfigMap name for autoscaler status |
+| `--metrics-addr` | `:8080` | Prometheus metrics bind address |
+| `--health-addr` | `:8081` | Health probe bind address (/healthz, /readyz) |
+| `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
+| `--initial-delay` | `10s` | Delay before first diagnosis |
+| `--namespace` | (all) | Restrict to specific namespace |
 
 ## Deployment
 
 - Runs in kube-system as a single-replica Deployment
 - Go binary using controller-runtime
-- Minimal RBAC: read pods/nodes/configmaps, create events
+- Minimal RBAC: read pods/nodes/configmaps, patch pods (annotation writes), create/patch events (core and events.k8s.io groups)
 - Low resource footprint (only processes Pending pods)
 
 ## Distribution

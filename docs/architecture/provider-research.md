@@ -201,19 +201,25 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods]
-    verbs: [get, list, watch]
+    verbs: [get, list, watch, patch]
   - apiGroups: [""]
     resources: [nodes]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [configmaps]
-    verbs: [get]
+    verbs: [get, list, watch]
   - apiGroups: [""]
+    resources: [events]
+    verbs: [get, list, create, patch]
+  - apiGroups: ["events.k8s.io"]
     resources: [events]
     verbs: [get, list, create, patch]
 ```
 
-Note: events now need `get, list` (not just `create, patch`) so fitcheck can read GOATScaler events on pods.
+Notes:
+- Pods need `patch` for writing the `fitcheck.io/diagnosis` annotation.
+- The `events.k8s.io` group is needed for the newer Events API.
+- Events need `get, list` (not just `create, patch`) so fitcheck can read GOATScaler events on pods.
 
 ## Controller-Runtime Implementation
 
@@ -266,10 +272,12 @@ ctrl.NewControllerManagedBy(mgr).
 ```go
 recorder := mgr.GetEventRecorderFor("fitcheck")
 
-// Usage in reconcile:
-r.Recorder.Eventf(&pod, corev1.EventTypeWarning, "NodepoolRejected",
-    "nodepool/%s: taint {%s:%s} not tolerated", nodepoolName, taintKey, taintEffect)
+// Usage in reconcile (single event per reconcile):
+r.Recorder.Eventf(&pod, corev1.EventTypeWarning, "FitcheckDiagnosis",
+    "2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1")
 ```
+
+Full per-nodepool detail is written to the `fitcheck.io/diagnosis` annotation on the pod rather than emitted as separate events.
 
 ### Event deduplication
 
@@ -299,14 +307,15 @@ mgr, _ := ctrl.NewManager(cfg, ctrl.Options{
 
 ## Configuration Matrix
 
-| --provider | Nodepool label | Autoscaler status source |
+Provider is auto-detected from cluster node labels at startup. No flag needed.
+
+| Provider | Nodepool label | Autoscaler status source |
 |---|---|---|
-| ack | `alibabacloud.com/nodepool-id` | GOATScaler events or `cluster-autoscaler-status` CM (auto-detect) |
-| gke | `cloud.google.com/gke-nodepool` | `cluster-autoscaler-status` CM |
-| tke | `tke.cloud.tencent.com/nodepool-id` | `cluster-autoscaler-status` CM (keyed by ASG ID) |
-| eks | `eks.amazonaws.com/nodegroup` | `cluster-autoscaler-status` CM |
-| karpenter | `karpenter.sh/nodepool` | NodePool/NodeClaim CRDs |
-| auto | detect from node labels | detect from cluster state |
+| ACK | `alibabacloud.com/nodepool-id` | GOATScaler events or `cluster-autoscaler-status` CM (auto-detect) |
+| GKE | `cloud.google.com/gke-nodepool` | `cluster-autoscaler-status` CM |
+| TKE | `tke.cloud.tencent.com/nodepool-id` | `cluster-autoscaler-status` CM (keyed by ASG ID) |
+| EKS | `eks.amazonaws.com/nodegroup` | `cluster-autoscaler-status` CM |
+| Karpenter | `karpenter.sh/nodepool` | NodePool/NodeClaim CRDs |
 
 ## Unknowns
 

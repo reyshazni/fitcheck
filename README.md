@@ -22,16 +22,33 @@ Events:
   Type     Reason              Age  From               Message
   ----     ------              ---  ----               -------
   Warning  FailedScheduling    5m   default-scheduler   0/26 nodes available: ...
-  Normal   FitcheckDiagnosis   4m   fitcheck            [accepted] general-pool(3/3), compute-pool(5/5)
-  Warning  FitcheckDiagnosis   4m   fitcheck            [rejected] nfs: taint workload_type=nfs:NoSchedule not tolerated, gpu-pool: taint nvidia.com/gpu=present:NoSchedule not tolerated
-                                                        [no-stock] spot-pool: inventory unhealthy
-                                                        [candidate] highmem-pool: scale-up triggered
-  Normal   NotTriggerScaleUp   4m   GOATScaler          pod didn't trigger scale-up: 14 NodePool NoStock, 32 TaintToleration
+  Warning  FitcheckDiagnosis   4m   fitcheck            2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1
 ```
 
-Two compact events per pod:
-- **Normal**: which nodepools can accept the pod, with fitting/total node counts
-- **Warning**: which nodepools rejected the pod and why, grouped by verdict
+One compact event per reconcile:
+- **Normal** if all nodepools fit, **Warning** if any are rejected, no-stock, or candidate
+- Single `FitcheckDiagnosis` reason with a one-line summary
+
+### Annotation diagnostics
+
+Full per-nodepool detail is written to the `fitcheck.io/diagnosis` annotation on the pod:
+
+```bash
+kubectl get pod my-pending-job -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
+```
+
+```json
+{
+  "timestamp": "2026-07-13T17:55:31Z",
+  "summary": "2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2",
+  "nodepools": [
+    {"name": "general-pool", "verdict": "accepted", "fitting": 3, "total": 5},
+    {"name": "gpu-pool", "verdict": "rejected", "reason": "taint nvidia.com/gpu=present:NoSchedule not tolerated", "category": "taint"}
+  ]
+}
+```
+
+The annotation is automatically removed when the pod leaves Pending state.
 
 ## How it works
 
@@ -103,7 +120,7 @@ Autoscaler integration (GOATScaler):
 rules:
   - apiGroups: [""]
     resources: [pods]
-    verbs: [get, list, watch]
+    verbs: [get, list, watch, patch]
   - apiGroups: [""]
     resources: [nodes]
     verbs: [get, list, watch]
@@ -117,6 +134,8 @@ rules:
     resources: [events]
     verbs: [get, list, create, patch]
 ```
+
+Pods require `patch` for writing the `fitcheck.io/diagnosis` annotation. The `events.k8s.io` group is needed for the newer Events API.
 
 ## Development
 
