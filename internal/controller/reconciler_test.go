@@ -359,3 +359,84 @@ func TestReconcile_RunningPod_NoAnnotation_NoPatch(t *testing.T) {
 		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
 	}
 }
+
+func TestReconcile_FullFlow_AnnotationAndEvent(t *testing.T) {
+	prov := ack.New()
+	pod := newPendingPod("full-flow-pod")
+
+	acceptedNode := newNode("accepted-node", prov.NodepoolLabelKey(), "pool-ok", "ok-pool")
+	rejectedNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "rejected-node",
+			Labels: map[string]string{prov.NodepoolLabelKey(): "pool-bad", nameLabelKey: "bad-pool"},
+		},
+		Spec: corev1.NodeSpec{
+			Taints: []corev1.Taint{
+				{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("8"),
+			},
+		},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod, acceptedNode, rejectedNode).
+		WithStatusSubresource(pod).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        prov,
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    0,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "full-flow-pod", Namespace: defaultNamespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	var updated corev1.Pod
+	if err := cl.Get(context.Background(), req.NamespacedName, &updated); err != nil {
+		t.Fatalf("getting updated pod: %v", err)
+	}
+
+	ann, ok := updated.Annotations[diagnosis.AnnotationKey]
+	if !ok {
+		t.Fatal("annotation not set")
+	}
+
+	var report diagnosis.DiagnosisReport
+	if err := json.Unmarshal([]byte(ann), &report); err != nil {
+		t.Fatalf("invalid annotation JSON: %v", err)
+	}
+
+	if len(report.Nodepools) != 2 {
+		t.Errorf("nodepools count = %d, want 2", len(report.Nodepools))
+	}
+	if !strings.Contains(report.Summary, "nodepools fit") {
+		t.Errorf("summary = %q, expected 'nodepools fit'", report.Summary)
+	}
+
+	select {
+	case event := <-recorder.Events:
+		if !strings.Contains(event, "nodepools fit") {
+			t.Errorf("event = %q, expected 'nodepools fit'", event)
+		}
+	default:
+		t.Error("expected one event")
+	}
+
+	select {
+	case extra := <-recorder.Events:
+		t.Errorf("expected exactly one event, got extra: %q", extra)
+	default:
+		// expected
+	}
+}
