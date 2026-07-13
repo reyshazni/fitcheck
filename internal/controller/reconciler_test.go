@@ -2,6 +2,7 @@ package controller_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/reyshazni/fitcheck/internal/controller"
+	"github.com/reyshazni/fitcheck/internal/diagnosis"
 	"github.com/reyshazni/fitcheck/internal/provider/ack"
 )
 
@@ -24,6 +26,9 @@ const (
 	pendingPodName   = "pending-pod"
 	runningPodName   = "running-pod"
 	gonePodName      = "gone-pod"
+	annotatedPodName = "annotated-pod"
+	containerName    = "main"
+	nameLabelKey     = "name"
 )
 
 func testScheme() *runtime.Scheme {
@@ -45,7 +50,7 @@ func TestReconcile_PendingPod(t *testing.T) {
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{
-					Name: "main",
+					Name: containerName,
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU: resource.MustParse("1"),
@@ -62,7 +67,7 @@ func TestReconcile_PendingPod(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   "node-1",
-			Labels: map[string]string{prov.NodepoolLabelKey(): "pool-a", "name": "general"},
+			Labels: map[string]string{prov.NodepoolLabelKey(): "pool-a", nameLabelKey: "general"},
 		},
 		Status: corev1.NodeStatus{
 			Allocatable: corev1.ResourceList{
@@ -187,5 +192,93 @@ func TestReconcile_PodDeleted(t *testing.T) {
 
 	if result.RequeueAfter != 0 {
 		t.Errorf("RequeueAfter = %v, want 0", result.RequeueAfter)
+	}
+}
+
+func newPendingPod(name string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         defaultNamespace,
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Minute)),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: containerName,
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	}
+}
+
+func newNode(name, poolLabelKey, poolID, poolName string) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: map[string]string{poolLabelKey: poolID, nameLabelKey: poolName},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+}
+
+func TestReconcile_PendingPod_WritesAnnotation(t *testing.T) {
+	prov := ack.New()
+	pod := newPendingPod(annotatedPodName)
+	node := newNode("node-ann-1", prov.NodepoolLabelKey(), "pool-ann", "ann-pool")
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod, node).
+		WithStatusSubresource(pod).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        prov,
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    10 * time.Second,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: annotatedPodName, Namespace: defaultNamespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	var updated corev1.Pod
+	if err := cl.Get(context.Background(), req.NamespacedName, &updated); err != nil {
+		t.Fatalf("getting updated pod: %v", err)
+	}
+
+	ann, ok := updated.Annotations[diagnosis.AnnotationKey]
+	if !ok {
+		t.Fatalf("expected annotation %q to be set", diagnosis.AnnotationKey)
+	}
+
+	var report diagnosis.DiagnosisReport
+	if err := json.Unmarshal([]byte(ann), &report); err != nil {
+		t.Fatalf("unmarshaling annotation: %v", err)
+	}
+
+	if report.Timestamp == "" {
+		t.Error("report.Timestamp is empty")
+	}
+	if report.Summary == "" {
+		t.Error("report.Summary is empty")
+	}
+	if len(report.Nodepools) == 0 {
+		t.Error("report.Nodepools is empty")
 	}
 }

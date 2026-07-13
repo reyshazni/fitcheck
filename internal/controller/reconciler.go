@@ -52,6 +52,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	r.writeAnnotation(ctx, &pod, diagnoses)
 	r.emitEvents(&pod, diagnoses)
 
 	return ctrl.Result{RequeueAfter: r.RecheckInterval}, nil
@@ -123,6 +124,32 @@ func applyAutoscalerStatus(d *diagnosis.NodepoolDiagnosis, statuses map[string]a
 		d.Verdict = diagnosis.NoStock
 	} else if s.ScaleUpTriggered {
 		d.Verdict = diagnosis.Candidate
+	}
+}
+
+func (r *PodReconciler) writeAnnotation(
+	ctx context.Context,
+	pod *corev1.Pod,
+	diagnoses []diagnosis.NodepoolDiagnosis,
+) {
+	report := diagnosis.BuildReport(diagnoses)
+
+	data, err := diagnosis.MarshalReport(report)
+	if err != nil {
+		slog.Warn("failed to marshal diagnosis report", "error", err, "pod", pod.Name)
+		return
+	}
+
+	patch := client.MergeFrom(pod.DeepCopy())
+
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+
+	pod.Annotations[diagnosis.AnnotationKey] = data
+
+	if err := r.Client.Patch(ctx, pod, patch); err != nil {
+		slog.Warn("failed to write diagnosis annotation", "error", err, "pod", pod.Name)
 	}
 }
 
