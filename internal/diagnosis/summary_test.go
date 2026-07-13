@@ -83,3 +83,79 @@ func TestFormatSummary_RejectedOnly(t *testing.T) {
 		t.Errorf("warning = %q, want %q", warning, wantWarning)
 	}
 }
+
+func TestFormatSummary_MixedVerdicts(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: summaryPoolAlpha,
+			Verdict:      diagnosis.Accepted,
+			FittingNodes: 2,
+			TotalNodes:   2,
+		},
+		{
+			NodepoolName: summaryPoolBravo,
+			Verdict:      diagnosis.Accepted,
+			FittingNodes: 1,
+			TotalNodes:   1,
+		},
+		{
+			NodepoolName: summaryPoolCharlie,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryTaint,
+				Reason:   "taint X",
+			},
+			TotalNodes: 3,
+		},
+		{
+			NodepoolName: summaryPoolDelta,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryNodeSelector,
+				Reason:   "selector Y",
+			},
+			TotalNodes: 1,
+		},
+		{
+			NodepoolName: summaryPoolEcho,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryResources,
+				Reason:   "resources",
+			},
+			TotalNodes: 2,
+		},
+		{
+			NodepoolName: summaryPoolFoxtrot,
+			Verdict:      diagnosis.NoStock,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryResources,
+				Reason:   "inventory unhealthy",
+			},
+			TotalNodes: 0,
+		},
+		{
+			NodepoolName: summaryPoolGolf,
+			Verdict:      diagnosis.Candidate,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryResources,
+				Reason:   "scale-up triggered",
+			},
+			TotalNodes: 1,
+		},
+	}
+
+	normal, warning := diagnosis.FormatSummary(diagnoses)
+
+	wantNormal := "[accepted] alpha(2/2), bravo(1/1)"
+	if normal != wantNormal {
+		t.Errorf("normal = %q, want %q", normal, wantNormal)
+	}
+
+	wantWarning := "[rejected] charlie: taint X, delta: selector Y, echo: resources\n" +
+		"[no-stock] foxtrot: inventory unhealthy\n" +
+		"[candidate] golf: scale-up triggered"
+	if warning != wantWarning {
+		t.Errorf("warning = %q, want %q", warning, wantWarning)
+	}
+}
