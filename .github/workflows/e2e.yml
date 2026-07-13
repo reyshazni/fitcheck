@@ -1,0 +1,59 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (K8s ${{ matrix.k8s-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s-version: ["1.30", "1.31"]
+        include:
+          - k8s-version: "1.30"
+            kind-image: kindest/node:v1.30.10
+          - k8s-version: "1.31"
+            kind-image: kindest/node:v1.31.6
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          node_image: ${{ matrix.kind-image }}
+          cluster_name: fitcheck-e2e
+
+      - name: Run E2E setup
+        run: bash hack/e2e-setup.sh
+        env:
+          CLUSTER_NAME: fitcheck-e2e
+
+      - name: Run E2E tests
+        run: go test -tags e2e -v ./test/e2e/...
+
+      - name: Collect failure logs
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A
+          echo "=== Controller logs ==="
+          kubectl logs -n kube-system -l app.kubernetes.io/name=fitcheck --tail=100
+          echo "=== Events ==="
+          kubectl get events -n kube-system --sort-by='.lastTimestamp'
+          echo "=== Describe deployment ==="
+          kubectl describe deployment -n kube-system fitcheck
