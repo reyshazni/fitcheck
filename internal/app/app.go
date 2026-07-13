@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -11,6 +14,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	"github.com/reyshazni/fitcheck/internal/autoscaler"
+	"github.com/reyshazni/fitcheck/internal/controller"
+	"github.com/reyshazni/fitcheck/internal/provider"
+	_ "github.com/reyshazni/fitcheck/internal/provider/ack" // register ACK provider
 )
 
 // Options holds business configuration for the application.
@@ -21,16 +29,38 @@ type Options struct {
 	Namespace       string
 }
 
+type unauthorizedRoundTripper struct {
+	rt http.RoundTripper
+}
+
 // Run creates a controller-runtime manager and starts it.
 func Run(cfg *rest.Config, metricsAddr, healthAddr string, opts Options) error {
+	cfg.Wrap(exitOnUnauthorized)
+
 	mgr, err := CreateManager(cfg, metricsAddr, healthAddr, opts)
 	if err != nil {
 		return fmt.Errorf("creating manager: %w", err)
 	}
 
-	// controller wiring will be added in Task 13
+	ctx := ctrl.SetupSignalHandler()
 
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	prov, err := provider.DetectProvider(ctx, mgr.GetClient())
+	if err != nil {
+		return fmt.Errorf("detecting provider: %w", err)
+	}
+
+	reader, err := prov.NewStatusReader(ctx, mgr.GetClient())
+	if err != nil {
+		return fmt.Errorf("detecting autoscaler: %w", err)
+	}
+
+	if err := setupReconciler(mgr, opts, prov, reader); err != nil {
+		return err
+	}
+
+	slog.Info("starting manager", "provider", prov.Name())
+
+	if err := mgr.Start(ctx); err != nil {
 		return fmt.Errorf("running manager: %w", err)
 	}
 
@@ -55,6 +85,46 @@ func CreateManager(cfg *rest.Config, metricsAddr, healthAddr string, opts Option
 	}
 
 	return mgr, nil
+}
+
+func (t *unauthorizedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.rt.RoundTrip(req)
+	if err != nil {
+		return nil, fmt.Errorf("round trip: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		slog.Error("API server returned 401, exiting to trigger pod restart")
+		os.Exit(1)
+	}
+
+	return resp, nil
+}
+
+func exitOnUnauthorized(rt http.RoundTripper) http.RoundTripper {
+	return &unauthorizedRoundTripper{rt: rt}
+}
+
+func setupReconciler(
+	mgr ctrl.Manager,
+	opts Options,
+	prov provider.Provider,
+	reader autoscaler.StatusReader,
+) error {
+	reconciler := &controller.PodReconciler{
+		Client:          mgr.GetClient(),
+		Recorder:        mgr.GetEventRecorderFor("fitcheck"),
+		Provider:        prov,
+		RecheckInterval: opts.RecheckInterval,
+		InitialDelay:    opts.InitialDelay,
+		StatusReader:    reader,
+	}
+
+	if err := controller.SetupWithManager(mgr, reconciler); err != nil {
+		return fmt.Errorf("setting up reconciler: %w", err)
+	}
+
+	return nil
 }
 
 func buildCacheOptions(opts Options) cache.Options {

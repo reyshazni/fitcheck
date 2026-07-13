@@ -8,6 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/reyshazni/fitcheck/internal/autoscaler"
+	"github.com/reyshazni/fitcheck/internal/provider"
 )
 
 // ACKProvider implements the Provider interface for Alibaba Cloud
@@ -18,6 +19,10 @@ const (
 	nodepoolLabel = "alibabacloud.com/nodepool-id"
 	nameLabel     = "name"
 )
+
+func init() {
+	provider.Register(New())
+}
 
 // New creates a new ACKProvider.
 func New() *ACKProvider { return &ACKProvider{} }
