@@ -45,7 +45,7 @@ func TestDiagnoseNodepool_AllFit(t *testing.T) {
 	np := diagnosis.NodepoolInfo{
 		ID:    testPoolID1,
 		Name:  "general",
-		Nodes: []diagnosis.NodeInfo{newFittingNode(testNodeName1), newFittingNode("node-2")},
+		Nodes: []diagnosis.NodeInfo{newFittingNode(testNodeName1), newFittingNode(testNodeName2)},
 	}
 
 	d := diagnosis.DiagnoseNodepool(pod, np)
@@ -71,7 +71,7 @@ func TestDiagnoseNodepool_SomeFit(t *testing.T) {
 		Nodes: []diagnosis.NodeInfo{
 			newFittingNode(testNodeName1),
 			{
-				Name:   "node-2",
+				Name:   testNodeName2,
 				Labels: map[string]string{},
 				Taints: []corev1.Taint{
 					{Key: taintKeyDedicated, Value: taintKeySpecial, Effect: corev1.TaintEffectNoSchedule},

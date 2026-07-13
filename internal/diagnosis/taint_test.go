@@ -21,6 +21,7 @@ const (
 	testZoneWest      = "us-west"
 	testPoolID1       = "pool-1"
 	testNodeName1     = "node-1"
+	testNodeName2     = "node-2"
 )
 
 func TestCheckTaints_AllTolerated(t *testing.T) {
