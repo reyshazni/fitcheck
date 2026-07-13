@@ -8,7 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -21,7 +21,7 @@ import (
 // PodReconciler watches Pending pods and emits per-nodepool diagnostic events.
 type PodReconciler struct {
 	Client          client.Client
-	Recorder        record.EventRecorder
+	Recorder        events.EventRecorder
 	Provider        provider.Provider
 	RecheckInterval time.Duration
 	InitialDelay    time.Duration
@@ -128,6 +128,6 @@ func applyAutoscalerStatus(d *diagnosis.NodepoolDiagnosis, statuses map[string]a
 
 func (r *PodReconciler) emitEvents(pod *corev1.Pod, diagnoses []diagnosis.NodepoolDiagnosis) {
 	for i := range diagnoses {
-		r.Recorder.Event(pod, diagnoses[i].EventType(), diagnoses[i].EventReason(), diagnoses[i].Message())
+		r.Recorder.Eventf(pod, nil, diagnoses[i].EventType(), diagnoses[i].EventReason(), "diagnose", diagnoses[i].Message())
 	}
 }

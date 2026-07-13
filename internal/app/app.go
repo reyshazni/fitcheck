@@ -113,7 +113,7 @@ func setupReconciler(
 ) error {
 	reconciler := &controller.PodReconciler{
 		Client:          mgr.GetClient(),
-		Recorder:        mgr.GetEventRecorderFor("fitcheck"),
+		Recorder:        mgr.GetEventRecorder("fitcheck"),
 		Provider:        prov,
 		RecheckInterval: opts.RecheckInterval,
 		InitialDelay:    opts.InitialDelay,

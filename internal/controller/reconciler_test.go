@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -75,7 +75,7 @@ func TestReconcile_PendingPod(t *testing.T) {
 		WithObjects(pod, node).
 		Build()
 
-	recorder := record.NewFakeRecorder(10)
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
 
 	r := &controller.PodReconciler{
 		Client:          cl,
@@ -122,7 +122,7 @@ func TestReconcile_NonPendingPod(t *testing.T) {
 		WithObjects(pod).
 		Build()
 
-	recorder := record.NewFakeRecorder(10)
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
 
 	r := &controller.PodReconciler{
 		Client:          cl,
@@ -158,7 +158,7 @@ func TestReconcile_PodDeleted(t *testing.T) {
 		WithScheme(scheme).
 		Build()
 
-	recorder := record.NewFakeRecorder(10)
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
 
 	r := &controller.PodReconciler{
 		Client:          cl,
