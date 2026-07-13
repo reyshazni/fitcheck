@@ -10,15 +10,18 @@ import (
 
 const (
 	taintKeyDedicated = "dedicated"
-	taintValueGPU     = "gpu"
+	testValueGPU      = "gpu"
+	testValueTrue     = "true"
+	testZoneEast1a    = "us-east-1a"
+	testLabelZone     = "zone"
 )
 
 func TestCheckTaints_AllTolerated(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: taintKeyDedicated, Value: taintValueGPU, Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
 	}
 	tolerations := []corev1.Toleration{
-		{Key: taintKeyDedicated, Operator: corev1.TolerationOpEqual, Value: taintValueGPU, Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyDedicated, Operator: corev1.TolerationOpEqual, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(tolerations, taints)
@@ -29,7 +32,7 @@ func TestCheckTaints_AllTolerated(t *testing.T) {
 
 func TestCheckTaints_MissingToleration(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: taintKeyDedicated, Value: taintValueGPU, Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)
@@ -51,8 +54,8 @@ func TestCheckTaints_EmptyTaints(t *testing.T) {
 
 func TestCheckTaints_WildcardToleration(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: taintKeyDedicated, Value: taintValueGPU, Effect: corev1.TaintEffectNoSchedule},
-		{Key: "special", Value: "true", Effect: corev1.TaintEffectNoExecute},
+		{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
+		{Key: "special", Value: testValueTrue, Effect: corev1.TaintEffectNoExecute},
 	}
 	tolerations := []corev1.Toleration{
 		{Operator: corev1.TolerationOpExists},
