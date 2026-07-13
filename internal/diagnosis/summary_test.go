@@ -1,6 +1,8 @@
 package diagnosis_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/reyshazni/fitcheck/internal/diagnosis"
@@ -157,5 +159,40 @@ func TestFormatSummary_MixedVerdicts(t *testing.T) {
 		"[candidate] golf: scale-up triggered"
 	if warning != wantWarning {
 		t.Errorf("warning = %q, want %q", warning, wantWarning)
+	}
+}
+
+func TestFormatSummary_TruncationAt1kB(t *testing.T) {
+	diagnoses := make([]diagnosis.NodepoolDiagnosis, 0, 50)
+
+	for i := range 50 {
+		diagnoses = append(diagnoses, diagnosis.NodepoolDiagnosis{
+			NodepoolName: fmt.Sprintf("long-nodepool-name-%03d", i),
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryTaint,
+				Reason: fmt.Sprintf(
+					"taint workload_type=special-value-%03d:NoSchedule not tolerated", i,
+				),
+			},
+			TotalNodes: 3,
+		})
+	}
+
+	_, warning := diagnosis.FormatSummary(diagnoses)
+
+	if len(warning) > 1000 {
+		t.Errorf("warning length = %d, want <= 1000", len(warning))
+	}
+
+	if warning == "" {
+		t.Error("warning should not be empty with 50 rejected pools")
+	}
+
+	wantSuffix := "more"
+	if !strings.HasSuffix(warning, wantSuffix) {
+		tail := warning[len(warning)-30:]
+		t.Errorf("warning should end with %q, got tail: %q",
+			wantSuffix, tail)
 	}
 }

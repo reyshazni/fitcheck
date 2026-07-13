@@ -141,22 +141,25 @@ func truncateLine(line string) string {
 	prefix := line[:prefixEnd+2]
 	body := line[prefixEnd+2:]
 
+	// Extract existing "... +N more" suffix if present
+	dropped := 0
+	if idx := strings.LastIndex(body, ", ... +"); idx >= 0 {
+		suffix := body[idx+len(", ... +"):]
+		if n, err := fmt.Sscanf(suffix, "%d more", &dropped); n == 1 && err == nil {
+			body = body[:idx]
+		}
+	}
+
 	parts := strings.Split(body, ", ")
 	if len(parts) <= 1 {
 		return line
 	}
 
-	kept := parts[:len(parts)-1]
-	dropped := 1
-
-	last := kept[len(kept)-1]
-	if strings.HasSuffix(last, " more") {
-		kept = kept[:len(kept)-1]
-		dropped++
-	}
+	parts = parts[:len(parts)-1]
+	dropped++
 
 	return fmt.Sprintf("%s%s, ... +%d more",
-		prefix, strings.Join(kept, ", "), dropped,
+		prefix, strings.Join(parts, ", "), dropped,
 	)
 }
 
