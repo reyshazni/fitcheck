@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: reyshazni/fitcheck
+  CHART_REGISTRY: oci://ghcr.io/reyshazni/charts
+
+jobs:
+  publish-image:
+    name: Publish Image
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build-push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install setup-envtest
+        run: go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.22
+
+      - name: Run tests
+        run: |
+          eval $(setup-envtest use -p env)
+          go test -race ./...
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image
+        run: cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+          output-file: sbom.spdx.json
+
+      - name: Attach SBOM to image
+        run: cosign attach sbom --sbom sbom.spdx.json ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  publish-chart:
+    name: Publish Chart
+    runs-on: ubuntu-latest
+    needs: [publish-image]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Update chart appVersion
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/fitcheck/Chart.yaml
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/fitcheck/Chart.yaml
+
+      - name: Package chart
+        run: helm package charts/fitcheck/
+
+      - name: Push chart
+        run: helm push fitcheck-*.tgz ${{ env.CHART_REGISTRY }}
+
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: [publish-image, publish-chart]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Generate install.yaml
+        run: helm template fitcheck charts/fitcheck/ -n kube-system > install.yaml
+
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            install.yaml
+            sbom.spdx.json
