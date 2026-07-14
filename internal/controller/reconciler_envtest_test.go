@@ -65,6 +65,7 @@ func TestReconciler_Envtest(t *testing.T) {
 		Provider:        ack.New(),
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    0,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: envtestPodName, Namespace: envtestNamespace}}

@@ -31,6 +31,8 @@ const (
 	cleanRunningPod   = "clean-running-pod"
 	containerName     = "main"
 	nameLabelKey      = "name"
+	taintKeyDedicated = "dedicated"
+	taintValueGPU     = "gpu"
 )
 
 func testScheme() *runtime.Scheme {
@@ -91,6 +93,7 @@ func TestReconcile_PendingPod(t *testing.T) {
 		Provider:        prov,
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    10 * time.Second,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: pendingPodName, Namespace: defaultNamespace}}
@@ -147,6 +150,7 @@ func TestReconcile_NonPendingPod(t *testing.T) {
 		Provider:        ack.New(),
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    10 * time.Second,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: runningPodName, Namespace: defaultNamespace}}
@@ -183,6 +187,7 @@ func TestReconcile_PodDeleted(t *testing.T) {
 		Provider:        ack.New(),
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    10 * time.Second,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: gonePodName, Namespace: defaultNamespace}}
@@ -252,6 +257,7 @@ func TestReconcile_PendingPod_WritesAnnotation(t *testing.T) {
 		Provider:        prov,
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    10 * time.Second,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: annotatedPodName, Namespace: defaultNamespace}}
@@ -309,6 +315,7 @@ func TestReconcile_RunningPod_RemovesAnnotation(t *testing.T) {
 		Provider:        ack.New(),
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    10 * time.Second,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: wasPendingPodName, Namespace: defaultNamespace}}
@@ -347,6 +354,7 @@ func TestReconcile_RunningPod_NoAnnotation_NoPatch(t *testing.T) {
 		Provider:        ack.New(),
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    10 * time.Second,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: cleanRunningPod, Namespace: defaultNamespace}}
@@ -372,7 +380,7 @@ func TestReconcile_FullFlow_AnnotationAndEvent(t *testing.T) {
 		},
 		Spec: corev1.NodeSpec{
 			Taints: []corev1.Taint{
-				{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+				{Key: taintKeyDedicated, Value: taintValueGPU, Effect: corev1.TaintEffectNoSchedule},
 			},
 		},
 		Status: corev1.NodeStatus{
@@ -395,6 +403,7 @@ func TestReconcile_FullFlow_AnnotationAndEvent(t *testing.T) {
 		Provider:        prov,
 		RecheckInterval: 30 * time.Second,
 		InitialDelay:    0,
+		StartupTimeout:  10 * time.Minute,
 	}
 
 	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "full-flow-pod", Namespace: defaultNamespace}}
@@ -438,5 +447,80 @@ func TestReconcile_FullFlow_AnnotationAndEvent(t *testing.T) {
 		t.Errorf("expected exactly one event, got extra: %q", extra)
 	default:
 		// expected
+	}
+}
+
+func TestReconcile_InitializingNodepool_EmitsNormalEvent(t *testing.T) {
+	scheme := testScheme()
+	prov := ack.New()
+
+	pod := newPendingPod("init-event-pod")
+
+	initNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "init-node",
+			Labels:            map[string]string{prov.NodepoolLabelKey(): "pool-init", nameLabelKey: "init-pool"},
+			CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+		},
+		Spec: corev1.NodeSpec{
+			Taints: []corev1.Taint{
+				{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+
+	rejectedNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "perm-node",
+			Labels: map[string]string{prov.NodepoolLabelKey(): "pool-perm", nameLabelKey: "perm-pool"},
+		},
+		Spec: corev1.NodeSpec{
+			Taints: []corev1.Taint{
+				{Key: taintKeyDedicated, Value: taintValueGPU, Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("8"),
+			},
+		},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(pod, initNode, rejectedNode).
+		WithStatusSubresource(pod).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        prov,
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    0,
+		StartupTimeout:  10 * time.Minute,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "init-event-pod", Namespace: defaultNamespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	select {
+	case event := <-recorder.Events:
+		if strings.Contains(event, "Warning") {
+			t.Errorf("expected Normal event (initializing present), got: %q", event)
+		}
+		if !strings.Contains(event, "initializing") {
+			t.Errorf("expected 'initializing' in event, got: %q", event)
+		}
+	default:
+		t.Error("expected at least one event")
 	}
 }
