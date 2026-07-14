@@ -95,6 +95,8 @@ func categoryToString(c RejectionCategory) string {
 		return "affinity"
 	case CategoryResources:
 		return "resource"
+	case CategoryStartupTaint:
+		return "initializing"
 	default:
 		return ""
 	}

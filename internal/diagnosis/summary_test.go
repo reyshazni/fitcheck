@@ -135,6 +135,66 @@ func TestFormatEventSummary_NoStockOnly(t *testing.T) {
 	}
 }
 
+func TestFormatEventSummary_SingleStartupTaint(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (not-ready), may resolve on its own",
+			},
+			TotalNodes: 2,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/1 nodepools fit | rejected: 1 initializing"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatEventSummary_MixedWithStartupTaint(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryTaint,
+				Reason:   reasonTaintX,
+			},
+			TotalNodes: 2,
+		},
+		{
+			NodepoolName: poolB,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (not-ready), may resolve on its own",
+			},
+			TotalNodes: 1,
+		},
+		{
+			NodepoolName: poolC,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryAffinity,
+				Reason:   "affinity mismatch",
+			},
+			TotalNodes: 3,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/3 nodepools fit | rejected: 1 taint, 1 affinity, 1 initializing"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
 func TestFormatEventSummary_CategoryOrdering(t *testing.T) {
 	diagnoses := []diagnosis.NodepoolDiagnosis{
 		{
