@@ -3,6 +3,7 @@ package nodepool_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -210,5 +211,53 @@ func TestCollector_NameLabelPresent(t *testing.T) {
 
 	if pools[0].Name != testPoolMyPool {
 		t.Errorf("Name = %q, want %q", pools[0].Name, testPoolMyPool)
+	}
+}
+
+func TestCollect_NodeCreationTimestamp(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	now := time.Now().Add(-5 * time.Minute)
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "ts-node",
+			Labels:            map[string]string{testLabelKey: "pool-ts", testNameLabelKey: "ts-pool"},
+			CreationTimestamp: metav1.NewTime(now),
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(node).
+		Build()
+
+	collector := nodepool.Collector{}
+	pools, err := collector.Collect(context.Background(), cl, testLabelKey, testNameLabelKey)
+	if err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+
+	if len(pools) != 1 {
+		t.Fatalf("len(pools) = %d, want 1", len(pools))
+	}
+
+	if len(pools[0].Nodes) != 1 {
+		t.Fatalf("len(nodes) = %d, want 1", len(pools[0].Nodes))
+	}
+
+	nodeInfo := pools[0].Nodes[0]
+	if nodeInfo.CreationTimestamp.IsZero() {
+		t.Error("CreationTimestamp is zero, want non-zero")
+	}
+
+	diff := nodeInfo.CreationTimestamp.Sub(now)
+	if diff < -time.Second || diff > time.Second {
+		t.Errorf("CreationTimestamp = %v, want ~%v", nodeInfo.CreationTimestamp, now)
 	}
 }

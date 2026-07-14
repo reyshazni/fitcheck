@@ -2,6 +2,7 @@ package diagnosis
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -20,10 +21,11 @@ type Rejection struct {
 
 // NodeInfo holds the scheduling-relevant properties of a single node.
 type NodeInfo struct {
-	Name        string
-	Labels      map[string]string
-	Taints      []corev1.Taint
-	Allocatable corev1.ResourceList
+	Name              string
+	Labels            map[string]string
+	Taints            []corev1.Taint
+	Allocatable       corev1.ResourceList
+	CreationTimestamp time.Time
 }
 
 // NodepoolInfo groups nodes belonging to the same nodepool.

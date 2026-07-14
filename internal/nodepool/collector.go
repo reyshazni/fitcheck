@@ -73,10 +73,11 @@ func resolveName(labels map[string]string, nameLabelKey, fallback string) string
 
 func buildNodeInfo(node corev1.Node) diagnosis.NodeInfo {
 	return diagnosis.NodeInfo{
-		Name:        node.Name,
-		Labels:      node.Labels,
-		Taints:      node.Spec.Taints,
-		Allocatable: node.Status.Allocatable,
+		Name:              node.Name,
+		Labels:            node.Labels,
+		Taints:            node.Spec.Taints,
+		Allocatable:       node.Status.Allocatable,
+		CreationTimestamp: node.CreationTimestamp.Time,
 	}
 }
 
