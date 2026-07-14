@@ -174,11 +174,12 @@ func (r *PodReconciler) emitEvents(pod *corev1.Pod, diagnoses []diagnosis.Nodepo
 		return
 	}
 
-	eventType := corev1.EventTypeNormal
+	eventType := corev1.EventTypeWarning
 
 	for _, d := range diagnoses {
-		if d.Verdict != diagnosis.Accepted {
-			eventType = corev1.EventTypeWarning
+		if d.Verdict == diagnosis.Accepted || d.Verdict == diagnosis.Initializing || d.Verdict == diagnosis.Candidate {
+			eventType = corev1.EventTypeNormal
+
 			break
 		}
 	}
