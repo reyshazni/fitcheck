@@ -115,3 +115,32 @@ func TestCheckTaints_PreferNoScheduleIgnored(t *testing.T) {
 		t.Errorf("CheckTaints() = %v, want nil (PreferNoSchedule should be ignored)", got)
 	}
 }
+
+func TestIsStartupTaint_KnownKeys(t *testing.T) {
+	knownKeys := []string{
+		"node.kubernetes.io/not-ready",
+		"node.kubernetes.io/unreachable",
+		"node.kubernetes.io/network-unavailable",
+	}
+
+	for _, key := range knownKeys {
+		if !diagnosis.IsStartupTaint(key) {
+			t.Errorf("IsStartupTaint(%q) = false, want true", key)
+		}
+	}
+}
+
+func TestIsStartupTaint_RegularKeys(t *testing.T) {
+	regularKeys := []string{
+		"dedicated",
+		"nvidia.com/gpu",
+		"node.kubernetes.io/disk-pressure",
+		"special",
+	}
+
+	for _, key := range regularKeys {
+		if diagnosis.IsStartupTaint(key) {
+			t.Errorf("IsStartupTaint(%q) = true, want false", key)
+		}
+	}
+}

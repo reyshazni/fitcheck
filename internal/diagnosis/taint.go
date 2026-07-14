@@ -7,6 +7,18 @@ import (
 	"k8s.io/klog/v2"
 )
 
+var startupTaintKeys = map[string]bool{
+	"node.kubernetes.io/not-ready":           true,
+	"node.kubernetes.io/unreachable":         true,
+	"node.kubernetes.io/network-unavailable": true,
+}
+
+// IsStartupTaint returns true if the taint key is a Kubernetes node
+// lifecycle taint applied during node initialization.
+func IsStartupTaint(key string) bool {
+	return startupTaintKeys[key]
+}
+
 // CheckTaints checks whether the given tolerations can tolerate all
 // blocking taints (NoSchedule and NoExecute). Returns nil if all taints
 // are tolerated, or a Rejection for the first untolerated taint.
