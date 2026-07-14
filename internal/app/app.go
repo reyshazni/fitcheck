@@ -27,6 +27,7 @@ type Options struct {
 	RecheckInterval time.Duration
 	InitialDelay    time.Duration
 	Namespace       string
+	StartupTimeout  time.Duration
 }
 
 type unauthorizedRoundTripper struct {
@@ -125,6 +126,7 @@ func setupReconciler(
 		RecheckInterval: opts.RecheckInterval,
 		InitialDelay:    opts.InitialDelay,
 		StatusReader:    reader,
+		StartupTimeout:  opts.StartupTimeout,
 	}
 
 	if err := controller.SetupWithManager(mgr, reconciler); err != nil {

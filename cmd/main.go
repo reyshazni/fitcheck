@@ -49,6 +49,7 @@ func parseFlags() (string, string, app.Options) {
 	flag.DurationVar(&opts.RecheckInterval, "recheck-interval", 30*time.Second, "re-evaluation interval")
 	flag.DurationVar(&opts.InitialDelay, "initial-delay", 10*time.Second, "delay before first diagnosis")
 	flag.StringVar(&opts.Namespace, "namespace", "", "restrict to namespace")
+	flag.DurationVar(&opts.StartupTimeout, "startup-timeout", 10*time.Minute, "node startup taint timeout")
 	flag.Parse()
 
 	return metricsAddr, healthAddr, opts
