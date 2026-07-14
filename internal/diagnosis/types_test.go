@@ -31,6 +31,32 @@ func TestNodepoolDiagnosis_Accepted(t *testing.T) {
 	}
 }
 
+func TestNodepoolDiagnosis_Initializing(t *testing.T) {
+	d := diagnosis.NodepoolDiagnosis{
+		NodepoolID:   "pool-init",
+		NodepoolName: "init-pool",
+		Verdict:      diagnosis.Initializing,
+		Rejection: &diagnosis.Rejection{
+			Category: diagnosis.CategoryStartupTaint,
+			Reason:   "node initializing (not-ready), may resolve on its own",
+		},
+		TotalNodes: 2,
+	}
+
+	if d.EventType() != corev1.EventTypeNormal {
+		t.Errorf("EventType() = %q, want %q", d.EventType(), corev1.EventTypeNormal)
+	}
+
+	if d.EventReason() != "NodepoolInitializing" {
+		t.Errorf("EventReason() = %q, want %q", d.EventReason(), "NodepoolInitializing")
+	}
+
+	wantMsg := "nodepool/init-pool: node initializing (not-ready), may resolve on its own"
+	if d.Message() != wantMsg {
+		t.Errorf("Message() = %q, want %q", d.Message(), wantMsg)
+	}
+}
+
 func TestNodepoolDiagnosis_WarningVerdicts(t *testing.T) {
 	tests := []struct {
 		name       string

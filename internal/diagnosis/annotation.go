@@ -79,6 +79,8 @@ func verdictToString(v Verdict) string {
 		return "no-stock"
 	case Candidate:
 		return "candidate"
+	case Initializing:
+		return "initializing"
 	default:
 		return strings.ToLower(string(v))
 	}

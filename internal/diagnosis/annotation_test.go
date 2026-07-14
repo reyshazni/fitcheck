@@ -87,6 +87,35 @@ func mixedDiagnoses() []diagnosis.NodepoolDiagnosis {
 	}
 }
 
+func TestBuildReport_InitializingVerdict(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: "init-pool",
+			Verdict:      diagnosis.Initializing,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (not-ready), may resolve on its own",
+			},
+			TotalNodes: 1,
+		},
+	}
+
+	report := diagnosis.BuildReport(diagnoses)
+
+	if len(report.Nodepools) != 1 {
+		t.Fatalf("nodepools count = %d, want 1", len(report.Nodepools))
+	}
+
+	np := report.Nodepools[0]
+	if np.Verdict != "initializing" {
+		t.Errorf("Verdict = %q, want %q", np.Verdict, "initializing")
+	}
+
+	if np.Category != "initializing" {
+		t.Errorf("Category = %q, want %q", np.Category, "initializing")
+	}
+}
+
 func TestBuildReport_MixedTimestamp(t *testing.T) {
 	report := diagnosis.BuildReport(mixedDiagnoses())
 

@@ -44,10 +44,11 @@ type NodepoolDiagnosis struct {
 }
 
 const (
-	Accepted  Verdict = "Accepted"
-	Rejected  Verdict = "Rejected"
-	Candidate Verdict = "Candidate"
-	NoStock   Verdict = "NoStock"
+	Accepted     Verdict = "Accepted"
+	Rejected     Verdict = "Rejected"
+	Candidate    Verdict = "Candidate"
+	NoStock      Verdict = "NoStock"
+	Initializing Verdict = "Initializing"
 )
 
 const (
@@ -60,7 +61,7 @@ const (
 
 // EventType returns the Kubernetes event type for this diagnosis.
 func (d NodepoolDiagnosis) EventType() string {
-	if d.Verdict == Accepted {
+	if d.Verdict == Accepted || d.Verdict == Initializing {
 		return corev1.EventTypeNormal
 	}
 
