@@ -29,23 +29,52 @@ One compact event per reconcile:
 - **Normal** if all nodepools fit, **Warning** if any are rejected, no-stock, or candidate
 - Single `FitcheckDiagnosis` reason with a one-line summary
 
-### Annotation diagnostics
+### Full diagnosis (annotation)
 
-Full per-nodepool detail is written to the `fitcheck.io/diagnosis` annotation on the pod:
+`kubectl describe pod` truncates long annotations. To see the full per-nodepool breakdown:
 
 ```bash
-kubectl get pod my-pending-job -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
+kubectl get pod -n <namespace> <pod-name> \
+  -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
 ```
 
 ```json
 {
-  "timestamp": "2026-07-13T17:55:31Z",
-  "summary": "2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2",
+  "timestamp": "2026-07-14T04:04:58Z",
+  "summary": "1/15 nodepools fit | rejected: 12 taint, 2 affinity",
   "nodepools": [
-    {"name": "general-pool", "verdict": "accepted", "fitting": 3, "total": 5},
-    {"name": "gpu-pool", "verdict": "rejected", "reason": "taint nvidia.com/gpu=present:NoSchedule not tolerated", "category": "taint"}
+    {
+      "name": "general-pool",
+      "verdict": "accepted",
+      "fitting": 1,
+      "total": 1
+    },
+    {
+      "name": "gpu-pool",
+      "verdict": "rejected",
+      "reason": "taint nvidia.com/gpu=present:NoSchedule not tolerated",
+      "category": "taint"
+    },
+    {
+      "name": "nfs",
+      "verdict": "rejected",
+      "reason": "taint workload_type=nfs:NoSchedule not tolerated",
+      "category": "taint"
+    }
   ]
 }
+```
+
+Filter for specific verdicts:
+
+```bash
+# Show only rejected nodepools
+kubectl get pod -n <namespace> <pod-name> \
+  -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq '.nodepools[] | select(.verdict == "rejected")'
+
+# Show only accepted nodepools
+kubectl get pod -n <namespace> <pod-name> \
+  -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq '.nodepools[] | select(.verdict == "accepted")'
 ```
 
 The annotation is automatically removed when the pod leaves Pending state.
