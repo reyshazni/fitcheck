@@ -19,6 +19,7 @@ controller:
   healthAddr: ":8081"
   recheckInterval: "30s"
   initialDelay: "10s"
+  startupTimeout: "10m"
 
 resources:
   requests:

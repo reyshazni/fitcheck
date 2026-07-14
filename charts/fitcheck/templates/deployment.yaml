@@ -33,6 +33,7 @@ spec:
             - --health-addr={{ .Values.controller.healthAddr }}
             - --recheck-interval={{ .Values.controller.recheckInterval }}
             - --initial-delay={{ .Values.controller.initialDelay }}
+            - --startup-timeout={{ .Values.controller.startupTimeout }}
           ports:
             - name: metrics
               containerPort: 8080
