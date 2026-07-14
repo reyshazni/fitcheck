@@ -2,6 +2,7 @@ package diagnosis
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
@@ -21,22 +22,38 @@ func IsStartupTaint(key string) bool {
 
 // CheckTaints checks whether the given tolerations can tolerate all
 // blocking taints (NoSchedule and NoExecute). Returns nil if all taints
-// are tolerated, or a Rejection for the first untolerated taint.
+// are tolerated. Permanent untolerated taints take priority over startup
+// taints; if only startup taints are untolerated, returns CategoryStartupTaint.
 func CheckTaints(tolerations []corev1.Toleration, taints []corev1.Taint) *Rejection {
+	var startupRejection *Rejection
+
 	for i := range taints {
 		if taints[i].Effect == corev1.TaintEffectPreferNoSchedule {
 			continue
 		}
 
-		if !isTaintTolerated(taints[i], tolerations) {
-			return &Rejection{
-				Category: CategoryTaint,
-				Reason:   formatTaintReason(taints[i]),
+		if isTaintTolerated(taints[i], tolerations) {
+			continue
+		}
+
+		if IsStartupTaint(taints[i].Key) {
+			if startupRejection == nil {
+				startupRejection = &Rejection{
+					Category: CategoryStartupTaint,
+					Reason:   formatStartupTaintReason(taints[i]),
+				}
 			}
+
+			continue
+		}
+
+		return &Rejection{
+			Category: CategoryTaint,
+			Reason:   formatTaintReason(taints[i]),
 		}
 	}
 
-	return nil
+	return startupRejection
 }
 
 func isTaintTolerated(taint corev1.Taint, tolerations []corev1.Toleration) bool {
@@ -57,4 +74,13 @@ func formatTaintReason(taint corev1.Taint) string {
 	}
 
 	return fmt.Sprintf("taint %s=%s:%s not tolerated", taint.Key, taint.Value, taint.Effect)
+}
+
+func formatStartupTaintReason(taint corev1.Taint) string {
+	suffix := taint.Key
+	if idx := strings.LastIndex(taint.Key, "/"); idx >= 0 {
+		suffix = taint.Key[idx+1:]
+	}
+
+	return fmt.Sprintf("node initializing (%s), may resolve on its own", suffix)
 }

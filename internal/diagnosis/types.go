@@ -55,6 +55,7 @@ const (
 	CategoryNodeSelector RejectionCategory = 2
 	CategoryAffinity     RejectionCategory = 3
 	CategoryResources    RejectionCategory = 4
+	CategoryStartupTaint RejectionCategory = 5
 )
 
 // EventType returns the Kubernetes event type for this diagnosis.

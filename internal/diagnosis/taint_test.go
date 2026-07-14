@@ -85,8 +85,13 @@ func TestCheckTaints_NoScheduleNotTolerated(t *testing.T) {
 		t.Fatal("CheckTaints() = nil, want Rejection")
 	}
 
-	if got.Category != diagnosis.CategoryTaint {
-		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryTaint)
+	if got.Category != diagnosis.CategoryStartupTaint {
+		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryStartupTaint)
+	}
+
+	wantReason := "node initializing (not-ready), may resolve on its own"
+	if got.Reason != wantReason {
+		t.Errorf("Reason = %q, want %q", got.Reason, wantReason)
 	}
 }
 
@@ -100,8 +105,80 @@ func TestCheckTaints_NoExecuteNotTolerated(t *testing.T) {
 		t.Fatal("CheckTaints() = nil, want Rejection")
 	}
 
+	if got.Category != diagnosis.CategoryStartupTaint {
+		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryStartupTaint)
+	}
+
+	wantReason := "node initializing (unreachable), may resolve on its own"
+	if got.Reason != wantReason {
+		t.Errorf("Reason = %q, want %q", got.Reason, wantReason)
+	}
+}
+
+func TestCheckTaints_StartupAndPermanent_ReturnsPermanent(t *testing.T) {
+	taints := []corev1.Taint{
+		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+		{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+	}
+
+	got := diagnosis.CheckTaints(nil, taints)
+	if got == nil {
+		t.Fatal("CheckTaints() = nil, want Rejection")
+	}
+
 	if got.Category != diagnosis.CategoryTaint {
-		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryTaint)
+		t.Errorf("Category = %d, want %d (permanent taint takes priority)", got.Category, diagnosis.CategoryTaint)
+	}
+}
+
+func TestCheckTaints_StartupOnly_ReturnsStartup(t *testing.T) {
+	taints := []corev1.Taint{
+		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+		{Key: "node.kubernetes.io/network-unavailable", Effect: corev1.TaintEffectNoSchedule},
+	}
+
+	got := diagnosis.CheckTaints(nil, taints)
+	if got == nil {
+		t.Fatal("CheckTaints() = nil, want Rejection")
+	}
+
+	if got.Category != diagnosis.CategoryStartupTaint {
+		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryStartupTaint)
+	}
+}
+
+func TestCheckTaints_StartupTaintReason_NetworkUnavailable(t *testing.T) {
+	taints := []corev1.Taint{
+		{Key: "node.kubernetes.io/network-unavailable", Effect: corev1.TaintEffectNoSchedule},
+	}
+
+	got := diagnosis.CheckTaints(nil, taints)
+	if got == nil {
+		t.Fatal("CheckTaints() = nil, want Rejection")
+	}
+
+	want := "node initializing (network-unavailable), may resolve on its own"
+	if got.Reason != want {
+		t.Errorf("Reason = %q, want %q", got.Reason, want)
+	}
+}
+
+func TestCheckTaints_PermanentTolerated_StartupNotTolerated(t *testing.T) {
+	taints := []corev1.Taint{
+		{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+	}
+	tolerations := []corev1.Toleration{
+		{Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+	}
+
+	got := diagnosis.CheckTaints(tolerations, taints)
+	if got == nil {
+		t.Fatal("CheckTaints() = nil, want Rejection")
+	}
+
+	if got.Category != diagnosis.CategoryStartupTaint {
+		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryStartupTaint)
 	}
 }
 
