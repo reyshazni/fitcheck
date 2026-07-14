@@ -34,8 +34,7 @@ One compact event per reconcile:
 `kubectl describe pod` truncates long annotations. To see the full per-nodepool breakdown:
 
 ```bash
-kubectl get pod -n <namespace> <pod-name> \
-  -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
+kubectl get pod -n <namespace> <pod_name> -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq .
 ```
 
 ```json
@@ -69,12 +68,10 @@ Filter for specific verdicts:
 
 ```bash
 # Show only rejected nodepools
-kubectl get pod -n <namespace> <pod-name> \
-  -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq '.nodepools[] | select(.verdict == "rejected")'
+kubectl get pod -n <namespace> <pod_name> -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq '.nodepools[] | select(.verdict == "rejected")'
 
 # Show only accepted nodepools
-kubectl get pod -n <namespace> <pod-name> \
-  -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq '.nodepools[] | select(.verdict == "accepted")'
+kubectl get pod -n <namespace> <pod_name> -o jsonpath='{.metadata.annotations.fitcheck\.io/diagnosis}' | jq '.nodepools[] | select(.verdict == "accepted")'
 ```
 
 The annotation is automatically removed when the pod leaves Pending state.
