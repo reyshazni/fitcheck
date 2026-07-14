@@ -2,6 +2,7 @@ package diagnosis_test
 
 import (
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -43,7 +44,7 @@ func TestDiagnoseAll(t *testing.T) {
 		},
 	}
 
-	results := diagnosis.DiagnoseAll(pod, nodepools)
+	results := diagnosis.DiagnoseAll(pod, nodepools, 10*time.Minute)
 
 	if len(results) != 2 {
 		t.Fatalf("len(results) = %d, want 2", len(results))

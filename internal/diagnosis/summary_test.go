@@ -195,6 +195,106 @@ func TestFormatEventSummary_MixedWithStartupTaint(t *testing.T) {
 	}
 }
 
+func TestFormatEventSummary_InitializingVerdict(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
+			Verdict:      diagnosis.Rejected,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryTaint,
+				Reason:   reasonTaintX,
+			},
+			TotalNodes: 2,
+		},
+		{
+			NodepoolName: poolB,
+			Verdict:      diagnosis.Initializing,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (not-ready), may resolve on its own",
+			},
+			TotalNodes: 1,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/2 nodepools fit | rejected: 1 taint | initializing: 1"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatEventSummary_AllInitializing(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{
+			NodepoolName: poolA,
+			Verdict:      diagnosis.Initializing,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (not-ready), may resolve on its own",
+			},
+			TotalNodes: 2,
+		},
+		{
+			NodepoolName: poolB,
+			Verdict:      diagnosis.Initializing,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (unreachable), may resolve on its own",
+			},
+			TotalNodes: 1,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "0/2 nodepools fit | initializing: 2"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatEventSummary_FullMix(t *testing.T) {
+	diagnoses := []diagnosis.NodepoolDiagnosis{
+		{NodepoolName: poolA, Verdict: diagnosis.Accepted, FittingNodes: 3, TotalNodes: 5},
+		{
+			NodepoolName: poolB,
+			Verdict:      diagnosis.Rejected,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: reasonTaintX},
+			TotalNodes:   2,
+		},
+		{
+			NodepoolName: poolC,
+			Verdict:      diagnosis.Initializing,
+			Rejection: &diagnosis.Rejection{
+				Category: diagnosis.CategoryStartupTaint,
+				Reason:   "node initializing (not-ready), may resolve on its own",
+			},
+			TotalNodes: 1,
+		},
+		{
+			NodepoolName: poolD,
+			Verdict:      diagnosis.NoStock,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: reasonInvUnhealthy},
+			TotalNodes:   0,
+		},
+		{
+			NodepoolName: poolE,
+			Verdict:      diagnosis.Candidate,
+			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryResources, Reason: "scale-up triggered"},
+			TotalNodes:   1,
+		},
+	}
+
+	got := diagnosis.FormatEventSummary(diagnoses)
+	want := "1/5 nodepools fit | rejected: 1 taint | no-stock: 1 | candidate: 1 | initializing: 1"
+
+	if got != want {
+		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	}
+}
+
 func TestFormatEventSummary_CategoryOrdering(t *testing.T) {
 	diagnoses := []diagnosis.NodepoolDiagnosis{
 		{

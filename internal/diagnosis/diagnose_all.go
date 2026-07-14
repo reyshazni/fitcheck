@@ -8,12 +8,11 @@ import (
 
 // DiagnoseAll runs scheduling diagnosis for each nodepool and returns
 // the results. One NodepoolDiagnosis is produced per nodepool.
-// TODO(task8): accept startupTimeout parameter instead of zero value.
-func DiagnoseAll(pod *corev1.Pod, nodepools []NodepoolInfo) []NodepoolDiagnosis {
+func DiagnoseAll(pod *corev1.Pod, nodepools []NodepoolInfo, startupTimeout time.Duration) []NodepoolDiagnosis {
 	results := make([]NodepoolDiagnosis, 0, len(nodepools))
 
 	for _, np := range nodepools {
-		results = append(results, DiagnoseNodepool(pod, np, 0*time.Second))
+		results = append(results, DiagnoseNodepool(pod, np, startupTimeout))
 	}
 
 	return results

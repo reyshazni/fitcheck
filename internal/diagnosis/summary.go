@@ -28,6 +28,10 @@ func FormatEventSummary(diagnoses []NodepoolDiagnosis) string {
 		parts = append(parts, fmt.Sprintf("candidate: %d", candidateCount))
 	}
 
+	if initCount := countByVerdict(diagnoses, Initializing); initCount > 0 {
+		parts = append(parts, fmt.Sprintf("initializing: %d", initCount))
+	}
+
 	return strings.Join(parts, " | ")
 }
 

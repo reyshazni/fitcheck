@@ -76,7 +76,7 @@ func (r *PodReconciler) diagnose(ctx context.Context, pod *corev1.Pod) ([]diagno
 		return nil, fmt.Errorf("collecting nodepools: %w", err)
 	}
 
-	diagnoses := diagnosis.DiagnoseAll(pod, pools)
+	diagnoses := diagnosis.DiagnoseAll(pod, pools, 0*time.Second)
 
 	if r.StatusReader != nil {
 		diagnoses, err = r.upgradeVerdicts(ctx, pod, pools, diagnoses)
