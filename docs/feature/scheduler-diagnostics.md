@@ -26,13 +26,13 @@ The controller emits a single `FitcheckDiagnosis` event per reconcile on Pending
 
 | Reason | Type | When |
 |---|---|---|
-| FitcheckDiagnosis | Normal | All nodepools can accept the pod |
-| FitcheckDiagnosis | Warning | Any nodepool is rejected, no-stock, or candidate |
+| FitcheckDiagnosis | Normal | At least one nodepool is Accepted, Initializing, or Candidate |
+| FitcheckDiagnosis | Warning | All nodepools are Rejected or NoStock |
 
 The event message is a one-line summary:
 
 ```
-2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1
+2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1 | initializing: 1
 ```
 
 ## Annotation Diagnostics
@@ -63,6 +63,7 @@ The annotation is automatically removed when the pod leaves Pending state.
 The controller checks these scheduling dimensions per nodepool, in order:
 
 1. Taint/toleration mismatch
+   - Startup taints: if the only untolerated taints are known startup taints and the node is within `--startup-timeout` of creation, verdict is `Initializing` instead of `Rejected`
 2. NodeSelector not matched
 3. Node affinity not matched
 4. Insufficient resources (cpu, memory, gpu)
@@ -111,6 +112,7 @@ kubectl get pod my-ml-job -o jsonpath='{.metadata.annotations.fitcheck\.io/diagn
 | `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
 | `--initial-delay` | `10s` | Delay before first diagnosis |
 | `--namespace` | (all) | Restrict to specific namespace |
+| `--startup-timeout` | `10m` | Startup taint detection timeout |
 
 ## Deployment
 

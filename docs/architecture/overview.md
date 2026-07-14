@@ -21,7 +21,7 @@ Pending Pod (watch)
        |     +-- Check pod anti-affinity
        |     +-- Check topology spread
        |     +-- Check autoscaler state (ConfigMap)
-       |     +-- Determine verdict: Accepted / Rejected / Candidate / NoStock
+       |     +-- Determine verdict: Accepted / Rejected / Candidate / NoStock / Initializing
        |
        +-- Emit single FitcheckDiagnosis event (one-line summary)
        +-- Write fitcheck.io/diagnosis annotation (full JSON detail)
@@ -34,7 +34,7 @@ Pending Pod (watch)
 
 1. Pod enters Pending state, which triggers reconcile
 2. Controller waits `--initial-delay` (default 10s) to let the scheduler attempt first
-3. Diagnoses scheduling fit per nodepool
+3. Diagnoses scheduling fit per nodepool (startup taints detected within `--startup-timeout` window yield Initializing verdict)
 4. Emits a single `FitcheckDiagnosis` event with a one-line summary on the pod
 5. Writes full per-nodepool JSON to the `fitcheck.io/diagnosis` annotation on the pod
 6. Requeues every `--recheck-interval` (default 30s) while pod remains Pending

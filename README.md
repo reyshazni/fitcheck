@@ -22,7 +22,7 @@ Events:
   Type     Reason              Age  From               Message
   ----     ------              ---  ----               -------
   Warning  FailedScheduling    5m   default-scheduler   0/26 nodes available: ...
-  Warning  FitcheckDiagnosis   4m   fitcheck            2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1
+  Warning  FitcheckDiagnosis   4m   fitcheck            2/13 nodepools fit | rejected: 8 taint, 2 affinity | no-stock: 2 | candidate: 1 | initializing: 1
 ```
 
 One compact event per reconcile:
@@ -109,6 +109,7 @@ kubectl apply -f https://github.com/reyshazni/fitcheck/releases/latest/download/
 | `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
 | `--initial-delay` | `10s` | Delay before first diagnosis (let scheduler attempt first) |
 | `--namespace` | (all) | Restrict to specific namespace |
+| `--startup-timeout` | `10m` | Startup taint detection timeout |
 
 Provider is auto-detected from cluster node labels at startup. No `--provider` flag needed.
 
@@ -130,10 +131,12 @@ Adding a provider means implementing the `Provider` interface and registering it
 
 Per nodepool, in order:
 
-1. Taint/toleration mismatch
+1. Taint/toleration mismatch (startup taints yield `Initializing` verdict during `--startup-timeout` window)
 2. NodeSelector not matched
 3. Node affinity not matched
 4. Insufficient resources (cpu, memory, nvidia.com/gpu)
+
+**Verdicts**: `accepted`, `rejected`, `candidate` (scale-up triggered), `no-stock` (inventory unhealthy), `initializing` (node blocked only by startup taints, still joining the cluster).
 
 Autoscaler integration (GOATScaler):
 - Reads `ProvisionNode`, `NotTriggerScaleUp`, `ProvisionNodeFailed` events on pods

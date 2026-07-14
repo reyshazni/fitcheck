@@ -21,7 +21,7 @@ Single binary, one reconciler. Watches Pending pods, groups cluster nodes by nod
 1. Pod enters Pending, which triggers reconcile
 2. Wait `--initial-delay` (10s) for scheduler to attempt first
 3. List nodes, group by nodepool label
-4. Per nodepool: check taints, nodeSelector, affinity, resources, anti-affinity, topology spread
+4. Per nodepool: check taints (including startup taints via `--startup-timeout`), nodeSelector, affinity, resources, anti-affinity, topology spread
 5. Read autoscaler ConfigMap for scaling state per nodegroup
 6. Emit single `FitcheckDiagnosis` event with one-line summary on the pod
 7. Write full per-nodepool JSON to `fitcheck.io/diagnosis` annotation on the pod
@@ -62,6 +62,7 @@ docs/
 | `--recheck-interval` | `30s` | Re-evaluation interval for pending pods |
 | `--initial-delay` | `10s` | Delay before first diagnosis |
 | `--namespace` | (all) | Restrict to specific namespace |
+| `--startup-timeout` | `10m` | Startup taint detection timeout |
 
 Provider is auto-detected from cluster node labels at startup. No `--provider` flag needed.
 
