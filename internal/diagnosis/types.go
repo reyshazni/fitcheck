@@ -53,6 +53,8 @@ const (
 	Initializing Verdict = "Initializing"
 )
 
+const verdictInitializing = "initializing"
+
 const (
 	CategoryTaint        RejectionCategory = 1
 	CategoryNodeSelector RejectionCategory = 2

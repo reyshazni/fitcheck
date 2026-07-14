@@ -80,7 +80,7 @@ func verdictToString(v Verdict) string {
 	case Candidate:
 		return "candidate"
 	case Initializing:
-		return "initializing"
+		return verdictInitializing
 	default:
 		return strings.ToLower(string(v))
 	}

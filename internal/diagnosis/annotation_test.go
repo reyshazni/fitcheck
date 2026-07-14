@@ -22,6 +22,7 @@ const (
 	verdictTaint      = "taint"
 	verdictAccepted   = "accepted"
 	verdictRejected   = "rejected"
+	verdictInitStr    = "initializing"
 	mixedSummary      = "2/7 nodepools fit | rejected: 2 taint, 1 affinity | no-stock: 1 | candidate: 1"
 )
 
@@ -90,11 +91,11 @@ func mixedDiagnoses() []diagnosis.NodepoolDiagnosis {
 func TestBuildReport_InitializingVerdict(t *testing.T) {
 	diagnoses := []diagnosis.NodepoolDiagnosis{
 		{
-			NodepoolName: "init-pool",
+			NodepoolName: testPoolInit,
 			Verdict:      diagnosis.Initializing,
 			Rejection: &diagnosis.Rejection{
 				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (not-ready), may resolve on its own",
+				Reason:   reasonNotReady,
 			},
 			TotalNodes: 1,
 		},
@@ -107,12 +108,12 @@ func TestBuildReport_InitializingVerdict(t *testing.T) {
 	}
 
 	np := report.Nodepools[0]
-	if np.Verdict != "initializing" {
-		t.Errorf("Verdict = %q, want %q", np.Verdict, "initializing")
+	if np.Verdict != verdictInitStr {
+		t.Errorf("Verdict = %q, want %q", np.Verdict, verdictInitStr)
 	}
 
-	if np.Category != "initializing" {
-		t.Errorf("Category = %q, want %q", np.Category, "initializing")
+	if np.Category != verdictInitStr {
+		t.Errorf("Category = %q, want %q", np.Category, verdictInitStr)
 	}
 }
 

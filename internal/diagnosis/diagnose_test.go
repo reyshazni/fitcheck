@@ -187,7 +187,7 @@ func TestDiagnoseNodepool_StartupTaint_Initializing(t *testing.T) {
 				Name:   testNodeName1,
 				Labels: map[string]string{},
 				Taints: []corev1.Taint{
-					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+					{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
 				},
 				Allocatable: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("4"),
@@ -223,7 +223,7 @@ func TestDiagnoseNodepool_StartupTaint_PastTimeout(t *testing.T) {
 				Name:   testNodeName1,
 				Labels: map[string]string{},
 				Taints: []corev1.Taint{
-					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+					{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
 				},
 				Allocatable: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("4"),
@@ -251,8 +251,8 @@ func TestDiagnoseNodepool_StartupTaint_MixedWithPermanent(t *testing.T) {
 				Name:   testNodeName1,
 				Labels: map[string]string{},
 				Taints: []corev1.Taint{
-					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
-					{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+					{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
+					{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
 				},
 				Allocatable: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("4"),
@@ -285,7 +285,7 @@ func TestDiagnoseNodepool_StartupTaint_SomeNodesFit(t *testing.T) {
 				Name:   testNodeName2,
 				Labels: map[string]string{},
 				Taints: []corev1.Taint{
-					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+					{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
 				},
 				Allocatable: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("4"),

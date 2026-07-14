@@ -9,19 +9,25 @@ import (
 )
 
 const (
-	taintKeyDedicated = "dedicated"
-	taintKeySpecial   = "special"
-	testValueGPU      = "gpu"
-	testValueTrue     = "true"
-	testValueFalse    = "false"
-	testValueTainted  = "tainted"
-	testZoneEast1a    = "us-east-1a"
-	testLabelZone     = "zone"
-	testZoneEast      = "us-east"
-	testZoneWest      = "us-west"
-	testPoolID1       = "pool-1"
-	testNodeName1     = "node-1"
-	testNodeName2     = "node-2"
+	taintKeyDedicated          = "dedicated"
+	taintKeySpecial            = "special"
+	taintKeyNotReady           = "node.kubernetes.io/not-ready"
+	taintKeyUnreachable        = "node.kubernetes.io/unreachable"
+	taintKeyNetworkUnavailable = "node.kubernetes.io/network-unavailable"
+	reasonNotReady             = "node initializing (not-ready), may resolve on its own"
+	reasonUnreachable          = "node initializing (unreachable), may resolve on its own"
+	testPoolInit               = "init-pool"
+	testValueGPU               = "gpu"
+	testValueTrue              = "true"
+	testValueFalse             = "false"
+	testValueTainted           = "tainted"
+	testZoneEast1a             = "us-east-1a"
+	testLabelZone              = "zone"
+	testZoneEast               = "us-east"
+	testZoneWest               = "us-west"
+	testPoolID1                = "pool-1"
+	testNodeName1              = "node-1"
+	testNodeName2              = "node-2"
 )
 
 func TestCheckTaints_AllTolerated(t *testing.T) {
@@ -77,7 +83,7 @@ func TestCheckTaints_WildcardToleration(t *testing.T) {
 
 func TestCheckTaints_NoScheduleNotTolerated(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)
@@ -89,7 +95,7 @@ func TestCheckTaints_NoScheduleNotTolerated(t *testing.T) {
 		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryStartupTaint)
 	}
 
-	wantReason := "node initializing (not-ready), may resolve on its own"
+	wantReason := reasonNotReady
 	if got.Reason != wantReason {
 		t.Errorf("Reason = %q, want %q", got.Reason, wantReason)
 	}
@@ -97,7 +103,7 @@ func TestCheckTaints_NoScheduleNotTolerated(t *testing.T) {
 
 func TestCheckTaints_NoExecuteNotTolerated(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "node.kubernetes.io/unreachable", Effect: corev1.TaintEffectNoExecute},
+		{Key: taintKeyUnreachable, Effect: corev1.TaintEffectNoExecute},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)
@@ -109,7 +115,7 @@ func TestCheckTaints_NoExecuteNotTolerated(t *testing.T) {
 		t.Errorf("Category = %d, want %d", got.Category, diagnosis.CategoryStartupTaint)
 	}
 
-	wantReason := "node initializing (unreachable), may resolve on its own"
+	wantReason := reasonUnreachable
 	if got.Reason != wantReason {
 		t.Errorf("Reason = %q, want %q", got.Reason, wantReason)
 	}
@@ -117,8 +123,8 @@ func TestCheckTaints_NoExecuteNotTolerated(t *testing.T) {
 
 func TestCheckTaints_StartupAndPermanent_ReturnsPermanent(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
-		{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)
@@ -133,8 +139,8 @@ func TestCheckTaints_StartupAndPermanent_ReturnsPermanent(t *testing.T) {
 
 func TestCheckTaints_StartupOnly_ReturnsStartup(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
-		{Key: "node.kubernetes.io/network-unavailable", Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyNetworkUnavailable, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)
@@ -149,7 +155,7 @@ func TestCheckTaints_StartupOnly_ReturnsStartup(t *testing.T) {
 
 func TestCheckTaints_StartupTaintReason_NetworkUnavailable(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "node.kubernetes.io/network-unavailable", Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyNetworkUnavailable, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(nil, taints)
@@ -165,11 +171,11 @@ func TestCheckTaints_StartupTaintReason_NetworkUnavailable(t *testing.T) {
 
 func TestCheckTaints_PermanentTolerated_StartupNotTolerated(t *testing.T) {
 	taints := []corev1.Taint{
-		{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
-		{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyDedicated, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyNotReady, Effect: corev1.TaintEffectNoSchedule},
 	}
 	tolerations := []corev1.Toleration{
-		{Key: "dedicated", Operator: corev1.TolerationOpEqual, Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+		{Key: taintKeyDedicated, Operator: corev1.TolerationOpEqual, Value: testValueGPU, Effect: corev1.TaintEffectNoSchedule},
 	}
 
 	got := diagnosis.CheckTaints(tolerations, taints)
@@ -195,9 +201,9 @@ func TestCheckTaints_PreferNoScheduleIgnored(t *testing.T) {
 
 func TestIsStartupTaint_KnownKeys(t *testing.T) {
 	knownKeys := []string{
-		"node.kubernetes.io/not-ready",
-		"node.kubernetes.io/unreachable",
-		"node.kubernetes.io/network-unavailable",
+		taintKeyNotReady,
+		taintKeyUnreachable,
+		taintKeyNetworkUnavailable,
 	}
 
 	for _, key := range knownKeys {
@@ -209,10 +215,10 @@ func TestIsStartupTaint_KnownKeys(t *testing.T) {
 
 func TestIsStartupTaint_RegularKeys(t *testing.T) {
 	regularKeys := []string{
-		"dedicated",
+		taintKeyDedicated,
 		"nvidia.com/gpu",
 		"node.kubernetes.io/disk-pressure",
-		"special",
+		taintKeySpecial,
 	}
 
 	for _, key := range regularKeys {

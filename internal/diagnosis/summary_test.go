@@ -33,33 +33,78 @@ func TestFormatEventSummary_AllAccepted(t *testing.T) {
 	}
 }
 
-func TestFormatEventSummary_AllRejected(t *testing.T) {
-	diagnoses := []diagnosis.NodepoolDiagnosis{
+func TestFormatEventSummary_RejectedVariants(t *testing.T) {
+	tests := []struct {
+		name      string
+		diagnoses []diagnosis.NodepoolDiagnosis
+		want      string
+	}{
 		{
-			NodepoolName: poolA,
-			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: reasonTaintX},
-			TotalNodes:   2,
+			name: "AllRejected",
+			diagnoses: []diagnosis.NodepoolDiagnosis{
+				{
+					NodepoolName: poolA,
+					Verdict:      diagnosis.Rejected,
+					Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryTaint, Reason: reasonTaintX},
+					TotalNodes:   2,
+				},
+				{
+					NodepoolName: poolB,
+					Verdict:      diagnosis.Rejected,
+					Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity Y"},
+					TotalNodes:   1,
+				},
+				{
+					NodepoolName: poolC,
+					Verdict:      diagnosis.Rejected,
+					Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity Z"},
+					TotalNodes:   3,
+				},
+			},
+			want: "0/3 nodepools fit | rejected: 1 taint, 2 affinity",
 		},
 		{
-			NodepoolName: poolB,
-			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity Y"},
-			TotalNodes:   1,
-		},
-		{
-			NodepoolName: poolC,
-			Verdict:      diagnosis.Rejected,
-			Rejection:    &diagnosis.Rejection{Category: diagnosis.CategoryAffinity, Reason: "affinity Z"},
-			TotalNodes:   3,
+			name: "MixedWithStartupTaint",
+			diagnoses: []diagnosis.NodepoolDiagnosis{
+				{
+					NodepoolName: poolA,
+					Verdict:      diagnosis.Rejected,
+					Rejection: &diagnosis.Rejection{
+						Category: diagnosis.CategoryTaint,
+						Reason:   reasonTaintX,
+					},
+					TotalNodes: 2,
+				},
+				{
+					NodepoolName: poolB,
+					Verdict:      diagnosis.Rejected,
+					Rejection: &diagnosis.Rejection{
+						Category: diagnosis.CategoryStartupTaint,
+						Reason:   reasonNotReady,
+					},
+					TotalNodes: 1,
+				},
+				{
+					NodepoolName: poolC,
+					Verdict:      diagnosis.Rejected,
+					Rejection: &diagnosis.Rejection{
+						Category: diagnosis.CategoryAffinity,
+						Reason:   "affinity mismatch",
+					},
+					TotalNodes: 3,
+				},
+			},
+			want: "0/3 nodepools fit | rejected: 1 taint, 1 affinity, 1 initializing",
 		},
 	}
 
-	got := diagnosis.FormatEventSummary(diagnoses)
-	want := "0/3 nodepools fit | rejected: 1 taint, 2 affinity"
-
-	if got != want {
-		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := diagnosis.FormatEventSummary(tt.diagnoses)
+			if got != tt.want {
+				t.Errorf("FormatEventSummary() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -142,7 +187,7 @@ func TestFormatEventSummary_SingleStartupTaint(t *testing.T) {
 			Verdict:      diagnosis.Rejected,
 			Rejection: &diagnosis.Rejection{
 				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (not-ready), may resolve on its own",
+				Reason:   reasonNotReady,
 			},
 			TotalNodes: 2,
 		},
@@ -150,45 +195,6 @@ func TestFormatEventSummary_SingleStartupTaint(t *testing.T) {
 
 	got := diagnosis.FormatEventSummary(diagnoses)
 	want := "0/1 nodepools fit | rejected: 1 initializing"
-
-	if got != want {
-		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
-	}
-}
-
-func TestFormatEventSummary_MixedWithStartupTaint(t *testing.T) {
-	diagnoses := []diagnosis.NodepoolDiagnosis{
-		{
-			NodepoolName: poolA,
-			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryTaint,
-				Reason:   reasonTaintX,
-			},
-			TotalNodes: 2,
-		},
-		{
-			NodepoolName: poolB,
-			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (not-ready), may resolve on its own",
-			},
-			TotalNodes: 1,
-		},
-		{
-			NodepoolName: poolC,
-			Verdict:      diagnosis.Rejected,
-			Rejection: &diagnosis.Rejection{
-				Category: diagnosis.CategoryAffinity,
-				Reason:   "affinity mismatch",
-			},
-			TotalNodes: 3,
-		},
-	}
-
-	got := diagnosis.FormatEventSummary(diagnoses)
-	want := "0/3 nodepools fit | rejected: 1 taint, 1 affinity, 1 initializing"
 
 	if got != want {
 		t.Errorf("FormatEventSummary() = %q, want %q", got, want)
@@ -211,7 +217,7 @@ func TestFormatEventSummary_InitializingVerdict(t *testing.T) {
 			Verdict:      diagnosis.Initializing,
 			Rejection: &diagnosis.Rejection{
 				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (not-ready), may resolve on its own",
+				Reason:   reasonNotReady,
 			},
 			TotalNodes: 1,
 		},
@@ -232,7 +238,7 @@ func TestFormatEventSummary_AllInitializing(t *testing.T) {
 			Verdict:      diagnosis.Initializing,
 			Rejection: &diagnosis.Rejection{
 				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (not-ready), may resolve on its own",
+				Reason:   reasonNotReady,
 			},
 			TotalNodes: 2,
 		},
@@ -241,7 +247,7 @@ func TestFormatEventSummary_AllInitializing(t *testing.T) {
 			Verdict:      diagnosis.Initializing,
 			Rejection: &diagnosis.Rejection{
 				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (unreachable), may resolve on its own",
+				Reason:   reasonUnreachable,
 			},
 			TotalNodes: 1,
 		},
@@ -269,7 +275,7 @@ func TestFormatEventSummary_FullMix(t *testing.T) {
 			Verdict:      diagnosis.Initializing,
 			Rejection: &diagnosis.Rejection{
 				Category: diagnosis.CategoryStartupTaint,
-				Reason:   "node initializing (not-ready), may resolve on its own",
+				Reason:   reasonNotReady,
 			},
 			TotalNodes: 1,
 		},

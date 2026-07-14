@@ -34,11 +34,11 @@ func TestNodepoolDiagnosis_Accepted(t *testing.T) {
 func TestNodepoolDiagnosis_Initializing(t *testing.T) {
 	d := diagnosis.NodepoolDiagnosis{
 		NodepoolID:   "pool-init",
-		NodepoolName: "init-pool",
+		NodepoolName: testPoolInit,
 		Verdict:      diagnosis.Initializing,
 		Rejection: &diagnosis.Rejection{
 			Category: diagnosis.CategoryStartupTaint,
-			Reason:   "node initializing (not-ready), may resolve on its own",
+			Reason:   reasonNotReady,
 		},
 		TotalNodes: 2,
 	}
@@ -51,7 +51,7 @@ func TestNodepoolDiagnosis_Initializing(t *testing.T) {
 		t.Errorf("EventReason() = %q, want %q", d.EventReason(), "NodepoolInitializing")
 	}
 
-	wantMsg := "nodepool/init-pool: node initializing (not-ready), may resolve on its own"
+	wantMsg := "nodepool/" + testPoolInit + ": " + reasonNotReady
 	if d.Message() != wantMsg {
 		t.Errorf("Message() = %q, want %q", d.Message(), wantMsg)
 	}

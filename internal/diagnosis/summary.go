@@ -100,7 +100,7 @@ func categoryToString(c RejectionCategory) string {
 	case CategoryResources:
 		return "resource"
 	case CategoryStartupTaint:
-		return "initializing"
+		return verdictInitializing
 	default:
 		return ""
 	}
