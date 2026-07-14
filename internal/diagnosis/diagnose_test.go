@@ -2,6 +2,7 @@ package diagnosis_test
 
 import (
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -48,7 +49,7 @@ func TestDiagnoseNodepool_AllFit(t *testing.T) {
 		Nodes: []diagnosis.NodeInfo{newFittingNode(testNodeName1), newFittingNode(testNodeName2)},
 	}
 
-	d := diagnosis.DiagnoseNodepool(pod, np)
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
 
 	if d.Verdict != diagnosis.Accepted {
 		t.Errorf("Verdict = %q, want %q", d.Verdict, diagnosis.Accepted)
@@ -84,7 +85,7 @@ func TestDiagnoseNodepool_SomeFit(t *testing.T) {
 		},
 	}
 
-	d := diagnosis.DiagnoseNodepool(pod, np)
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
 
 	if d.Verdict != diagnosis.Accepted {
 		t.Errorf("Verdict = %q, want %q", d.Verdict, diagnosis.Accepted)
@@ -114,7 +115,7 @@ func TestDiagnoseNodepool_AllRejectTaint(t *testing.T) {
 		},
 	}
 
-	d := diagnosis.DiagnoseNodepool(pod, np)
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
 
 	if d.Verdict != diagnosis.Rejected {
 		t.Errorf("Verdict = %q, want %q", d.Verdict, diagnosis.Rejected)
@@ -142,7 +143,7 @@ func TestDiagnoseNodepool_AllRejectResources(t *testing.T) {
 		},
 	}
 
-	d := diagnosis.DiagnoseNodepool(pod, np)
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
 
 	if d.Verdict != diagnosis.Rejected {
 		t.Errorf("Verdict = %q, want %q", d.Verdict, diagnosis.Rejected)
@@ -165,7 +166,7 @@ func TestDiagnoseNodepool_ZeroNodes(t *testing.T) {
 		Nodes: []diagnosis.NodeInfo{},
 	}
 
-	d := diagnosis.DiagnoseNodepool(pod, np)
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
 
 	if d.Verdict != diagnosis.Rejected {
 		t.Errorf("Verdict = %q, want %q", d.Verdict, diagnosis.Rejected)
@@ -173,5 +174,131 @@ func TestDiagnoseNodepool_ZeroNodes(t *testing.T) {
 
 	if d.Rejection == nil {
 		t.Fatal("Rejection is nil, want non-nil")
+	}
+}
+
+func TestDiagnoseNodepool_StartupTaint_Initializing(t *testing.T) {
+	pod := newTestPod()
+	np := diagnosis.NodepoolInfo{
+		ID:   testPoolID1,
+		Name: "booting",
+		Nodes: []diagnosis.NodeInfo{
+			{
+				Name:   testNodeName1,
+				Labels: map[string]string{},
+				Taints: []corev1.Taint{
+					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+				},
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				CreationTimestamp: time.Now().Add(-2 * time.Minute),
+			},
+		},
+	}
+
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
+
+	if d.Verdict != diagnosis.Initializing {
+		t.Errorf("Verdict = %q, want %q", d.Verdict, diagnosis.Initializing)
+	}
+
+	if d.Rejection == nil {
+		t.Fatal("Rejection is nil, want non-nil")
+	}
+
+	if d.Rejection.Category != diagnosis.CategoryStartupTaint {
+		t.Errorf("Category = %d, want %d", d.Rejection.Category, diagnosis.CategoryStartupTaint)
+	}
+}
+
+func TestDiagnoseNodepool_StartupTaint_PastTimeout(t *testing.T) {
+	pod := newTestPod()
+	np := diagnosis.NodepoolInfo{
+		ID:   testPoolID1,
+		Name: "stuck",
+		Nodes: []diagnosis.NodeInfo{
+			{
+				Name:   testNodeName1,
+				Labels: map[string]string{},
+				Taints: []corev1.Taint{
+					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+				},
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				CreationTimestamp: time.Now().Add(-15 * time.Minute),
+			},
+		},
+	}
+
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
+
+	if d.Verdict != diagnosis.Rejected {
+		t.Errorf("Verdict = %q, want %q (past timeout)", d.Verdict, diagnosis.Rejected)
+	}
+}
+
+func TestDiagnoseNodepool_StartupTaint_MixedWithPermanent(t *testing.T) {
+	pod := newTestPod()
+	np := diagnosis.NodepoolInfo{
+		ID:   testPoolID1,
+		Name: "mixed-taints",
+		Nodes: []diagnosis.NodeInfo{
+			{
+				Name:   testNodeName1,
+				Labels: map[string]string{},
+				Taints: []corev1.Taint{
+					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+					{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
+				},
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				CreationTimestamp: time.Now().Add(-2 * time.Minute),
+			},
+		},
+	}
+
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
+
+	if d.Verdict != diagnosis.Rejected {
+		t.Errorf("Verdict = %q, want %q (permanent taint overrides)", d.Verdict, diagnosis.Rejected)
+	}
+
+	if d.Rejection.Category != diagnosis.CategoryTaint {
+		t.Errorf("Category = %d, want %d", d.Rejection.Category, diagnosis.CategoryTaint)
+	}
+}
+
+func TestDiagnoseNodepool_StartupTaint_SomeNodesFit(t *testing.T) {
+	pod := newTestPod()
+	np := diagnosis.NodepoolInfo{
+		ID:   testPoolID1,
+		Name: "partial-boot",
+		Nodes: []diagnosis.NodeInfo{
+			newFittingNode(testNodeName1),
+			{
+				Name:   testNodeName2,
+				Labels: map[string]string{},
+				Taints: []corev1.Taint{
+					{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+				},
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+				CreationTimestamp: time.Now().Add(-2 * time.Minute),
+			},
+		},
+	}
+
+	d := diagnosis.DiagnoseNodepool(pod, np, 10*time.Minute)
+
+	if d.Verdict != diagnosis.Accepted {
+		t.Errorf("Verdict = %q, want %q (some nodes fit)", d.Verdict, diagnosis.Accepted)
 	}
 }

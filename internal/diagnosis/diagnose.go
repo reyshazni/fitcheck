@@ -1,11 +1,23 @@
 package diagnosis
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+type nodeCheckResults struct {
+	fitting          int
+	firstRejection   *Rejection
+	startupRejection *Rejection
+	hasYoungStartup  bool
+}
 
 // DiagnoseNodepool checks whether a pod can be scheduled on any node
 // in the given nodepool. It returns Accepted if at least one node fits,
+// Initializing if all blocking nodes have startup taints within startupTimeout,
 // or Rejected if no node fits.
-func DiagnoseNodepool(pod *corev1.Pod, np NodepoolInfo) NodepoolDiagnosis {
+func DiagnoseNodepool(pod *corev1.Pod, np NodepoolInfo, startupTimeout time.Duration) NodepoolDiagnosis {
 	result := NodepoolDiagnosis{
 		NodepoolID:   np.ID,
 		NodepoolName: np.Name,
@@ -20,25 +32,53 @@ func DiagnoseNodepool(pod *corev1.Pod, np NodepoolInfo) NodepoolDiagnosis {
 	}
 
 	requests := aggregateRequests(pod)
-	var firstRejection *Rejection
+	nodeResults := checkAllNodes(pod, np.Nodes, requests, startupTimeout)
+	result.FittingNodes = nodeResults.fitting
 
-	for i := range np.Nodes {
-		rejection := checkNode(pod, np.Nodes[i], requests)
-		if rejection == nil {
-			result.FittingNodes++
-		} else if firstRejection == nil {
-			firstRejection = rejection
-		}
-	}
-
-	if result.FittingNodes > 0 {
+	switch {
+	case result.FittingNodes > 0:
 		result.Verdict = Accepted
-	} else {
+	case nodeResults.hasYoungStartup:
+		result.Verdict = Initializing
+		result.Rejection = nodeResults.startupRejection
+	default:
 		result.Verdict = Rejected
-		result.Rejection = firstRejection
+		result.Rejection = nodeResults.firstRejection
 	}
 
 	return result
+}
+
+func checkAllNodes(
+	pod *corev1.Pod,
+	nodes []NodeInfo,
+	requests corev1.ResourceList,
+	startupTimeout time.Duration,
+) nodeCheckResults {
+	var res nodeCheckResults
+
+	for i := range nodes {
+		rejection := checkNode(pod, nodes[i], requests)
+		if rejection == nil {
+			res.fitting++
+
+			continue
+		}
+
+		if res.firstRejection == nil {
+			res.firstRejection = rejection
+		}
+
+		if rejection.Category == CategoryStartupTaint && time.Since(nodes[i].CreationTimestamp) < startupTimeout {
+			res.hasYoungStartup = true
+
+			if res.startupRejection == nil {
+				res.startupRejection = rejection
+			}
+		}
+	}
+
+	return res
 }
 
 func checkNode(pod *corev1.Pod, node NodeInfo, requests corev1.ResourceList) *Rejection {
