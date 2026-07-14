@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -54,8 +55,9 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	oldSummary := extractOldSummary(&pod)
 	r.writeAnnotation(ctx, &pod, diagnoses)
-	r.emitEvents(&pod, diagnoses)
+	r.emitEvents(&pod, diagnoses, oldSummary)
 
 	return ctrl.Result{RequeueAfter: r.RecheckInterval}, nil
 }
@@ -168,9 +170,23 @@ func (r *PodReconciler) removeAnnotation(ctx context.Context, pod *corev1.Pod) {
 	}
 }
 
-func (r *PodReconciler) emitEvents(pod *corev1.Pod, diagnoses []diagnosis.NodepoolDiagnosis) {
+func extractOldSummary(pod *corev1.Pod) string {
+	raw, ok := pod.Annotations[diagnosis.AnnotationKey]
+	if !ok {
+		return ""
+	}
+
+	var report diagnosis.DiagnosisReport
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		return ""
+	}
+
+	return report.Summary
+}
+
+func (r *PodReconciler) emitEvents(pod *corev1.Pod, diagnoses []diagnosis.NodepoolDiagnosis, oldSummary string) {
 	summary := diagnosis.FormatEventSummary(diagnoses)
-	if summary == "" {
+	if summary == "" || summary == oldSummary {
 		return
 	}
 

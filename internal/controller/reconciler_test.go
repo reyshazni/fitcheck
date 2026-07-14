@@ -450,6 +450,138 @@ func TestReconcile_FullFlow_AnnotationAndEvent(t *testing.T) {
 	}
 }
 
+func TestReconcile_SkipsEventWhenSummaryUnchanged(t *testing.T) {
+	prov := ack.New()
+	pod := newPendingPod("dedup-pod")
+
+	node := newNode("node-dedup", prov.NodepoolLabelKey(), "pool-dedup", "dedup-pool")
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod, node).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        prov,
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    0,
+		StartupTimeout:  10 * time.Minute,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "dedup-pod", Namespace: defaultNamespace}}
+
+	// First reconcile: event should be emitted.
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("first Reconcile() error = %v", err)
+	}
+	select {
+	case <-recorder.Events:
+	default:
+		t.Fatal("expected first event to be emitted")
+	}
+
+	// Second reconcile: same state -> no new event.
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("second Reconcile() error = %v", err)
+	}
+
+	select {
+	case event := <-recorder.Events:
+		t.Errorf("expected no event on unchanged summary, got: %q", event)
+	default:
+		// expected
+	}
+}
+
+func TestReconcile_EmitsEventWhenSummaryChanges(t *testing.T) {
+	prov := ack.New()
+	pod := newPendingPod("summary-change-pod")
+
+	staleReport := diagnosis.DiagnosisReport{
+		Timestamp: "2026-01-01T00:00:00Z",
+		Summary:   "stale: old summary that will not match",
+		Nodepools: nil,
+	}
+	staleJSON, err := diagnosis.MarshalReport(staleReport)
+	if err != nil {
+		t.Fatalf("marshaling stale report: %v", err)
+	}
+
+	pod.Annotations = map[string]string{
+		diagnosis.AnnotationKey: staleJSON,
+	}
+
+	node := newNode("node-change", prov.NodepoolLabelKey(), "pool-change", "change-pool")
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod, node).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        prov,
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    0,
+		StartupTimeout:  10 * time.Minute,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "summary-change-pod", Namespace: defaultNamespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	select {
+	case event := <-recorder.Events:
+		if !strings.Contains(event, "nodepools fit") {
+			t.Errorf("expected FitcheckDiagnosis event, got: %q", event)
+		}
+	default:
+		t.Error("expected event when summary changed, got none")
+	}
+}
+
+func TestReconcile_EmitsEventOnFirstDiagnosis(t *testing.T) {
+	prov := ack.New()
+	pod := newPendingPod("first-diag-pod")
+
+	node := newNode("node-first", prov.NodepoolLabelKey(), "pool-first", "first-pool")
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod, node).
+		Build()
+
+	recorder := &events.FakeRecorder{Events: make(chan string, 10)}
+	r := &controller.PodReconciler{
+		Client:          cl,
+		Recorder:        recorder,
+		Provider:        prov,
+		RecheckInterval: 30 * time.Second,
+		InitialDelay:    0,
+		StartupTimeout:  10 * time.Minute,
+	}
+
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "first-diag-pod", Namespace: defaultNamespace}}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	select {
+	case event := <-recorder.Events:
+		if !strings.Contains(event, "nodepools fit") {
+			t.Errorf("expected FitcheckDiagnosis event, got: %q", event)
+		}
+	default:
+		t.Error("expected event on first diagnosis (no annotation), got none")
+	}
+}
+
 func TestReconcile_InitializingNodepool_EmitsNormalEvent(t *testing.T) {
 	scheme := testScheme()
 	prov := ack.New()
