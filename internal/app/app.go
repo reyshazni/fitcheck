@@ -13,10 +13,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/reyshazni/fitcheck/internal/autoscaler"
 	"github.com/reyshazni/fitcheck/internal/controller"
+	fitmetrics "github.com/reyshazni/fitcheck/internal/metrics"
 	"github.com/reyshazni/fitcheck/internal/provider"
 	_ "github.com/reyshazni/fitcheck/internal/provider/ack" // register ACK provider
 )
@@ -42,6 +44,8 @@ func Run(cfg *rest.Config, metricsAddr, healthAddr string, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("creating manager: %w", err)
 	}
+
+	crmetrics.Registry.MustRegister(fitmetrics.NewPendingPodCollector(mgr.GetClient()))
 
 	ctx := ctrl.SetupSignalHandler()
 
