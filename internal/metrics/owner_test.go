@@ -106,7 +106,7 @@ func TestResolveOwner_DirectOwners(t *testing.T) {
 func TestResolveOwner_ReplicaSetOwnedByDeployment(t *testing.T) {
 	rs := &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "web-abc123",
+			Name:      testRSName,
 			Namespace: testNamespace,
 			UID:       types.UID("rs-uid"),
 			OwnerReferences: []metav1.OwnerReference{
@@ -120,7 +120,7 @@ func TestResolveOwner_ReplicaSetOwnedByDeployment(t *testing.T) {
 		},
 	}
 
-	pod := newPodWithOwner("web-abc123-xyz", testAPIAppsV1, kindReplicaSet, "web-abc123", "rs-uid")
+	pod := newPodWithOwner(testPodName, testAPIAppsV1, kindReplicaSet, testRSName, "rs-uid")
 	cl := fakeclient.NewClientBuilder().WithScheme(testScheme()).WithObjects(rs).Build()
 	cache := make(map[types.UID]ownerInfo)
 
