@@ -16,9 +16,14 @@ import (
 )
 
 const (
-	metricName  = "fitcheck_pending_pods"
-	testRSName  = "web-abc123"
-	testPodName = "web-abc123-xyz"
+	metricName     = "fitcheck_pending_pods"
+	testRSName     = "web-abc123"
+	testPodName    = "web-abc123-xyz"
+	testTimestamp  = "2026-07-21T00:00:00Z"
+	testSummaryFit = "1/1 nodepools fit"
+	testPoolGen    = "general"
+	testAccepted   = "accepted"
+	testJobTrain1  = "train-1"
 )
 
 func containsSubstring(s, substr string) bool {
@@ -71,12 +76,12 @@ func TestDescribe_SendsOneDescriptor(t *testing.T) {
 
 func TestCollect_SinglePendingPod(t *testing.T) {
 	report := diagnosis.DiagnosisReport{
-		Timestamp: "2026-07-21T00:00:00Z",
-		Summary:   "1/1 nodepools fit",
+		Timestamp: testTimestamp,
+		Summary:   testSummaryFit,
 		Nodepools: []diagnosis.NodepoolResult{
 			{
-				Name:    "general",
-				Verdict: "accepted",
+				Name:    testPoolGen,
+				Verdict: testAccepted,
 				Fitting: 2,
 				Total:   3,
 			},
@@ -134,5 +139,177 @@ fitcheck_pending_pods{category="",namespace="default",nodepool="general",owner_k
 	err := testutil.CollectAndCompare(collector, strings.NewReader(expected), metricName)
 	if err != nil {
 		t.Errorf("metric mismatch: %v", err)
+	}
+}
+
+func TestCollect_AggregatesMultiplePods(t *testing.T) {
+	report := diagnosis.DiagnosisReport{
+		Timestamp: testTimestamp,
+		Summary:   "0/1 nodepools fit | rejected: 1 resource",
+		Nodepools: []diagnosis.NodepoolResult{
+			{
+				Name:     "gpu-pool",
+				Verdict:  "rejected",
+				Reason:   "insufficient cpu",
+				Category: "resource",
+			},
+		},
+	}
+
+	ann := annotationJSON(report)
+	batchNS := "batch"
+
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "job-pod-1",
+			Namespace: batchNS,
+			Annotations: map[string]string{
+				diagnosis.AnnotationKey: ann,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: kindJob, Name: testJobTrain1, UID: types.UID("job-1")},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	}
+
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "job-pod-2",
+			Namespace: batchNS,
+			Annotations: map[string]string{
+				diagnosis.AnnotationKey: ann,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: kindJob, Name: testJobTrain1, UID: types.UID("job-1")},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	}
+
+	pod3 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-pod",
+			Namespace: batchNS,
+			Annotations: map[string]string{
+				diagnosis.AnnotationKey: ann,
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{Kind: kindJob, Name: "train-2", UID: types.UID("job-2")},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod1, pod2, pod3).
+		Build()
+
+	collector := NewPendingPodCollector(cl)
+
+	expected := `
+# HELP fitcheck_pending_pods Number of pending pods grouped by owner, nodepool, and scheduling verdict
+# TYPE fitcheck_pending_pods gauge
+fitcheck_pending_pods{category="resource",namespace="batch",nodepool="gpu-pool",owner_kind="Job",owner_name="train-1",verdict="rejected"} 2
+fitcheck_pending_pods{category="resource",namespace="batch",nodepool="gpu-pool",owner_kind="Job",owner_name="train-2",verdict="rejected"} 1
+`
+
+	err := testutil.CollectAndCompare(collector, strings.NewReader(expected), metricName)
+	if err != nil {
+		t.Errorf("metric mismatch: %v", err)
+	}
+}
+
+func TestCollect_ZeroPendingPods(t *testing.T) {
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		Build()
+
+	collector := NewPendingPodCollector(cl)
+
+	count := testutil.CollectAndCount(collector, metricName)
+	if count != 0 {
+		t.Errorf("series count = %d, want 0", count)
+	}
+}
+
+func TestCollect_RunningPodsIgnored(t *testing.T) {
+	report := diagnosis.DiagnosisReport{
+		Timestamp: testTimestamp,
+		Summary:   testSummaryFit,
+		Nodepools: []diagnosis.NodepoolResult{
+			{Name: testPoolGen, Verdict: testAccepted},
+		},
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "running-pod",
+			Namespace: testNamespace,
+			Annotations: map[string]string{
+				diagnosis.AnnotationKey: annotationJSON(report),
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod).
+		Build()
+
+	collector := NewPendingPodCollector(cl)
+
+	count := testutil.CollectAndCount(collector, metricName)
+	if count != 0 {
+		t.Errorf("series count = %d, want 0 (running pods should be ignored)", count)
+	}
+}
+
+func TestCollect_MalformedAnnotationSkipped(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "bad-ann-pod",
+			Namespace: testNamespace,
+			Annotations: map[string]string{
+				diagnosis.AnnotationKey: "not valid json{{{",
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod).
+		Build()
+
+	collector := NewPendingPodCollector(cl)
+
+	count := testutil.CollectAndCount(collector, metricName)
+	if count != 0 {
+		t.Errorf("series count = %d, want 0 (malformed annotation should be skipped)", count)
+	}
+}
+
+func TestCollect_PendingPodWithoutAnnotation(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "no-ann-pod",
+			Namespace: testNamespace,
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodPending},
+	}
+
+	cl := fakeclient.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(pod).
+		Build()
+
+	collector := NewPendingPodCollector(cl)
+
+	count := testutil.CollectAndCount(collector, metricName)
+	if count != 0 {
+		t.Errorf("series count = %d, want 0 (pod without annotation should be skipped)", count)
 	}
 }
