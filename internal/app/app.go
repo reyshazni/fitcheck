@@ -55,7 +55,7 @@ func Run(cfg *rest.Config, metricsAddr, healthAddr string, opts Options) error {
 		return fmt.Errorf("creating direct client: %w", err)
 	}
 
-	crmetrics.Registry.MustRegister(fitmetrics.NewPendingPodCollector(directClient))
+	crmetrics.Registry.MustRegister(fitmetrics.NewPendingPodCollector(mgr.GetClient(), directClient))
 
 	prov, err := provider.DetectProvider(ctx, directClient)
 	if err != nil {

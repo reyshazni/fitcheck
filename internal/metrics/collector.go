@@ -16,9 +16,12 @@ import (
 // PendingPodCollector implements prometheus.Collector. It computes
 // fitcheck_pending_pod_count gauge values at scrape time by listing
 // Pending pods and parsing their diagnosis annotations.
+// It uses a cached reader for pod List (cheap, from informer cache)
+// and a direct reader for ReplicaSet Get (avoids starting an informer).
 type PendingPodCollector struct {
-	reader client.Reader
-	desc   *prometheus.Desc
+	podReader   client.Reader
+	ownerReader client.Reader
+	desc        *prometheus.Desc
 }
 
 type aggregationKey struct {
@@ -51,11 +54,13 @@ const (
 	labelVerdict   = "verdict"
 )
 
-// NewPendingPodCollector creates a collector that reads pod diagnosis
-// annotations via the given client.Reader.
-func NewPendingPodCollector(reader client.Reader) *PendingPodCollector {
+// NewPendingPodCollector creates a collector. The podReader should be a
+// cached client (for cheap pod List from informer cache). The ownerReader
+// should be a direct client (for ReplicaSet Get without starting informers).
+func NewPendingPodCollector(podReader, ownerReader client.Reader) *PendingPodCollector {
 	return &PendingPodCollector{
-		reader: reader,
+		podReader:   podReader,
+		ownerReader: ownerReader,
 		desc: prometheus.NewDesc(
 			pendingMetric,
 			metricHelp,
@@ -75,7 +80,7 @@ func (c *PendingPodCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx := context.Background()
 
 	var podList corev1.PodList
-	if err := c.reader.List(ctx, &podList); err != nil {
+	if err := c.podReader.List(ctx, &podList); err != nil {
 		slog.Warn("failed to list pods for metrics", "error", err)
 
 		return
@@ -119,7 +124,7 @@ func (c *PendingPodCollector) aggregatePods(
 		}
 
 		summary := bestVerdict(report.Nodepools)
-		owner := resolveOwner(ctx, c.reader, &pods[i], cache)
+		owner := resolveOwner(ctx, c.ownerReader, &pods[i], cache)
 
 		key := aggregationKey{
 			Namespace: pods[i].Namespace,

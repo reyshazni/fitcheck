@@ -43,7 +43,7 @@ func TestDescribe_SendsOneDescriptor(t *testing.T) {
 		WithScheme(testScheme()).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	ch := make(chan *prometheus.Desc, 10)
 	collector.Describe(ch)
@@ -112,7 +112,7 @@ func TestCollect_SinglePendingPod(t *testing.T) {
 		WithObjects(pod, rs).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	expected := `
 # HELP fitcheck_pending_pod_count Number of pending pods grouped by owner and scheduling verdict
@@ -155,7 +155,7 @@ func TestCollect_BestVerdictPicked(t *testing.T) {
 		WithObjects(pod).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	expected := `
 # HELP fitcheck_pending_pod_count Number of pending pods grouped by owner and scheduling verdict
@@ -213,7 +213,7 @@ func TestCollect_AggregatesMultiplePods(t *testing.T) {
 		WithObjects(pod1, pod2, pod3).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	expected := `
 # HELP fitcheck_pending_pod_count Number of pending pods grouped by owner and scheduling verdict
@@ -233,7 +233,7 @@ func TestCollect_ZeroPendingPods(t *testing.T) {
 		WithScheme(testScheme()).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	count := testutil.CollectAndCount(collector, metricName)
 	if count != 0 {
@@ -263,7 +263,7 @@ func TestCollect_RunningPodsIgnored(t *testing.T) {
 		WithObjects(pod).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	count := testutil.CollectAndCount(collector, metricName)
 	if count != 0 {
@@ -285,7 +285,7 @@ func TestCollect_MalformedAnnotationSkipped(t *testing.T) {
 		WithObjects(pod).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	count := testutil.CollectAndCount(collector, metricName)
 	if count != 0 {
@@ -306,7 +306,7 @@ func TestCollect_PendingPodWithoutAnnotation(t *testing.T) {
 		WithObjects(pod).
 		Build()
 
-	collector := NewPendingPodCollector(cl)
+	collector := NewPendingPodCollector(cl, cl)
 
 	count := testutil.CollectAndCount(collector, metricName)
 	if count != 0 {
