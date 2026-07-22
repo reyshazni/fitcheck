@@ -45,16 +45,17 @@ func Run(cfg *rest.Config, metricsAddr, healthAddr string, opts Options) error {
 		return fmt.Errorf("creating manager: %w", err)
 	}
 
-	crmetrics.Registry.MustRegister(fitmetrics.NewPendingPodCollector(mgr.GetClient()))
-
 	ctx := ctrl.SetupSignalHandler()
 
-	// Use a direct (non-cached) client for pre-start operations.
-	// mgr.GetClient() is cached and only works after mgr.Start().
+	// Use a direct (non-cached) client for pre-start operations and metrics.
+	// mgr.GetClient() is cached and dynamically starts informers on first access,
+	// which blocks the metrics endpoint on large clusters.
 	directClient, err := client.New(cfg, client.Options{Scheme: mgr.GetScheme()})
 	if err != nil {
 		return fmt.Errorf("creating direct client: %w", err)
 	}
+
+	crmetrics.Registry.MustRegister(fitmetrics.NewPendingPodCollector(directClient))
 
 	prov, err := provider.DetectProvider(ctx, directClient)
 	if err != nil {
