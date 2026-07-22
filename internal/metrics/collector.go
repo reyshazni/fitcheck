@@ -14,8 +14,8 @@ import (
 )
 
 // PendingPodCollector implements prometheus.Collector. It computes
-// fitcheck_pending_pods gauge values at scrape time by listing Pending
-// pods and parsing their diagnosis annotations.
+// fitcheck_pending_pod_count gauge values at scrape time by listing
+// Pending pods and parsing their diagnosis annotations.
 type PendingPodCollector struct {
 	reader client.Reader
 	desc   *prometheus.Desc
@@ -25,21 +25,30 @@ type aggregationKey struct {
 	Namespace string
 	OwnerKind string
 	OwnerName string
-	Nodepool  string
 	Verdict   string
 	Category  string
 }
 
-const (
-	metricHelp    = "Number of pending pods grouped by owner, nodepool, and scheduling verdict"
-	pendingMetric = "fitcheck_pending_pods"
+type podSummary struct {
+	Verdict  string
+	Category string
+}
 
+const (
+	metricHelp    = "Number of pending pods grouped by owner and scheduling verdict"
+	pendingMetric = "fitcheck_pending_pod_count"
+
+	verdictAccepted     = "accepted"
+	verdictCandidate    = "candidate"
+	verdictInitializing = "initializing"
+	verdictNoStock      = "no-stock"
+	verdictRejected     = "rejected"
+
+	labelCategory  = "category"
 	labelNamespace = "namespace"
 	labelOwnerKind = "owner_kind"
 	labelOwnerName = "owner_name"
-	labelNodepool  = "nodepool"
 	labelVerdict   = "verdict"
-	labelCategory  = "category"
 )
 
 // NewPendingPodCollector creates a collector that reads pod diagnosis
@@ -50,7 +59,7 @@ func NewPendingPodCollector(reader client.Reader) *PendingPodCollector {
 		desc: prometheus.NewDesc(
 			pendingMetric,
 			metricHelp,
-			[]string{labelNamespace, labelOwnerKind, labelOwnerName, labelNodepool, labelVerdict, labelCategory},
+			[]string{labelNamespace, labelOwnerKind, labelOwnerName, labelVerdict, labelCategory},
 			nil,
 		),
 	}
@@ -80,7 +89,7 @@ func (c *PendingPodCollector) Collect(ch chan<- prometheus.Metric) {
 			prometheus.GaugeValue,
 			float64(count),
 			key.Namespace, key.OwnerKind, key.OwnerName,
-			key.Nodepool, key.Verdict, key.Category,
+			key.Verdict, key.Category,
 		)
 	}
 }
@@ -109,29 +118,54 @@ func (c *PendingPodCollector) aggregatePods(
 			continue
 		}
 
+		summary := bestVerdict(report.Nodepools)
 		owner := resolveOwner(ctx, c.reader, &pods[i], cache)
-		addReportCounts(counts, pods[i].Namespace, owner, report)
+
+		key := aggregationKey{
+			Namespace: pods[i].Namespace,
+			OwnerKind: owner.Kind,
+			OwnerName: owner.Name,
+			Verdict:   summary.Verdict,
+			Category:  summary.Category,
+		}
+
+		counts[key]++
 	}
 
 	return counts
 }
 
-func addReportCounts(
-	counts map[aggregationKey]int,
-	namespace string,
-	owner ownerInfo,
-	report diagnosis.DiagnosisReport,
-) {
-	for _, np := range report.Nodepools {
-		key := aggregationKey{
-			Namespace: namespace,
-			OwnerKind: owner.Kind,
-			OwnerName: owner.Name,
-			Nodepool:  np.Name,
-			Verdict:   np.Verdict,
-			Category:  np.Category,
-		}
-
-		counts[key]++
+// verdictPriority returns a score for verdict ranking.
+// Higher is better: accepted > candidate > initializing > no-stock > rejected.
+func verdictPriority(verdict string) int {
+	switch verdict {
+	case verdictAccepted:
+		return 5
+	case verdictCandidate:
+		return 4
+	case verdictInitializing:
+		return 3
+	case verdictNoStock:
+		return 2
+	case verdictRejected:
+		return 1
+	default:
+		return 0
 	}
+}
+
+func bestVerdict(nodepools []diagnosis.NodepoolResult) podSummary {
+	if len(nodepools) == 0 {
+		return podSummary{Verdict: verdictRejected}
+	}
+
+	best := nodepools[0]
+
+	for _, np := range nodepools[1:] {
+		if verdictPriority(np.Verdict) > verdictPriority(best.Verdict) {
+			best = np
+		}
+	}
+
+	return podSummary{Verdict: best.Verdict, Category: best.Category}
 }
