@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	metricName     = "fitcheck_pending_pod_count"
+	metricName     = "fitcheck_pending_pods"
 	testRSName     = "web-abc123"
 	testPodName    = "web-abc123-xyz"
 	testTimestamp  = "2026-07-21T00:00:00Z"
@@ -115,9 +115,9 @@ func TestCollect_SinglePendingPod(t *testing.T) {
 	collector := NewPendingPodCollector(cl, cl)
 
 	expected := `
-# HELP fitcheck_pending_pod_count Number of pending pods grouped by owner and scheduling verdict
-# TYPE fitcheck_pending_pod_count gauge
-fitcheck_pending_pod_count{category="",namespace="default",owner_kind="Deployment",owner_name="web",verdict="accepted"} 1
+# HELP fitcheck_pending_pods Number of pending pods grouped by owner and scheduling verdict
+# TYPE fitcheck_pending_pods gauge
+fitcheck_pending_pods{category="",namespace="default",owner_kind="Deployment",owner_name="web",verdict="accepted"} 1
 `
 
 	err := testutil.CollectAndCompare(collector, strings.NewReader(expected), metricName)
@@ -158,9 +158,9 @@ func TestCollect_BestVerdictPicked(t *testing.T) {
 	collector := NewPendingPodCollector(cl, cl)
 
 	expected := `
-# HELP fitcheck_pending_pod_count Number of pending pods grouped by owner and scheduling verdict
-# TYPE fitcheck_pending_pod_count gauge
-fitcheck_pending_pod_count{category="",namespace="default",owner_kind="Job",owner_name="batch-job",verdict="no-stock"} 1
+# HELP fitcheck_pending_pods Number of pending pods grouped by owner and scheduling verdict
+# TYPE fitcheck_pending_pods gauge
+fitcheck_pending_pods{category="",namespace="default",owner_kind="Job",owner_name="batch-job",verdict="no-stock"} 1
 `
 
 	err := testutil.CollectAndCompare(collector, strings.NewReader(expected), metricName)
@@ -216,10 +216,10 @@ func TestCollect_AggregatesMultiplePods(t *testing.T) {
 	collector := NewPendingPodCollector(cl, cl)
 
 	expected := `
-# HELP fitcheck_pending_pod_count Number of pending pods grouped by owner and scheduling verdict
-# TYPE fitcheck_pending_pod_count gauge
-fitcheck_pending_pod_count{category="resource",namespace="batch",owner_kind="Job",owner_name="train-1",verdict="rejected"} 2
-fitcheck_pending_pod_count{category="resource",namespace="batch",owner_kind="Job",owner_name="train-2",verdict="rejected"} 1
+# HELP fitcheck_pending_pods Number of pending pods grouped by owner and scheduling verdict
+# TYPE fitcheck_pending_pods gauge
+fitcheck_pending_pods{category="resource",namespace="batch",owner_kind="Job",owner_name="train-1",verdict="rejected"} 2
+fitcheck_pending_pods{category="resource",namespace="batch",owner_kind="Job",owner_name="train-2",verdict="rejected"} 1
 `
 
 	err := testutil.CollectAndCompare(collector, strings.NewReader(expected), metricName)

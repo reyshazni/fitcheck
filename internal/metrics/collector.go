@@ -14,7 +14,7 @@ import (
 )
 
 // PendingPodCollector implements prometheus.Collector. It computes
-// fitcheck_pending_pod_count gauge values at scrape time by listing
+// fitcheck_pending_pods gauge values at scrape time by listing
 // Pending pods and parsing their diagnosis annotations.
 // It uses a cached reader for pod List (cheap, from informer cache)
 // and a direct reader for ReplicaSet Get (avoids starting an informer).
@@ -39,7 +39,7 @@ type podSummary struct {
 
 const (
 	metricHelp    = "Number of pending pods grouped by owner and scheduling verdict"
-	pendingMetric = "fitcheck_pending_pod_count"
+	pendingMetric = "fitcheck_pending_pods"
 
 	verdictAccepted     = "accepted"
 	verdictCandidate    = "candidate"
